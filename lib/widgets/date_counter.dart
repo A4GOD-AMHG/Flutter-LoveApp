@@ -1,25 +1,63 @@
+import 'package:love_app/utils/clippers.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
-import 'package:love_app/utils/clippers.dart';
+import 'dart:async';
 
-class DateCounter extends StatelessWidget {
+class DateCounter extends StatefulWidget {
   final DateTime startDate;
 
   const DateCounter({super.key, required this.startDate});
 
-  String _calculateDifference() {
+  @override
+  State<DateCounter> createState() => _DateCounterState();
+}
+
+class _DateCounterState extends State<DateCounter> {
+  late String _daysDifference;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateDifference();
+    _scheduleNextUpdate();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _updateDifference() {
     final now = DateTime.now();
-    final diff = now.difference(startDate).inDays;
-    String differenceDays = diff == 1 ? '$diff día' : '$diff días';
-    return differenceDays;
+    final diff = now.difference(widget.startDate).inDays;
+    _daysDifference = diff == 1 ? '$diff día' : '$diff días';
+  }
+
+  void _scheduleNextUpdate() {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final timeUntilMidnight = tomorrow.difference(now);
+
+    _timer = Timer(timeUntilMidnight, () {
+      if (mounted) {
+        setState(() {
+          _updateDifference();
+        });
+        _scheduleNextUpdate();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final outerColor = const Color(0xffA00FE2);
+    final innerColor = const Color(0xFFF3ECFF);
+    final fillBarColor = const Color(0xffA00FE2);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 20,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -28,12 +66,12 @@ class DateCounter extends StatelessWidget {
             child: Container(
               width: double.infinity,
               constraints: const BoxConstraints(maxWidth: 283, minWidth: 283),
-              height: 203,
+              height: 202,
               decoration: BoxDecoration(
-                color: Color(0xffA00FE2),
+                color: outerColor,
                 border: Border.all(
-                  color: Color(0xffA00FE2),
-                  width: 1.5,
+                  color: outerColor,
+                  width: 1,
                 ),
               ),
             ),
@@ -44,7 +82,7 @@ class DateCounter extends StatelessWidget {
               width: double.infinity,
               constraints: const BoxConstraints(maxWidth: 280, minWidth: 280),
               height: 200,
-              color: Color(0xFF2E305F),
+              color: innerColor,
               child: Stack(
                 children: [
                   ClipRect(
@@ -60,6 +98,8 @@ class DateCounter extends StatelessWidget {
                           child: LottieBuilder.asset(
                             'assets/drop_purple_water.json',
                             fit: BoxFit.cover,
+                            repeat: true,
+                            animate: true,
                           ),
                         ),
                       ),
@@ -70,9 +110,9 @@ class DateCounter extends StatelessWidget {
                     left: 0,
                     right: 0,
                     child: Container(
-                      height: 120,
+                      height: 110,
                       decoration: BoxDecoration(
-                        color: Color(0xffA00FE2),
+                        color: fillBarColor,
                         borderRadius: const BorderRadius.only(
                           bottomLeft: Radius.circular(20),
                           bottomRight: Radius.circular(20),
@@ -85,7 +125,7 @@ class DateCounter extends StatelessWidget {
                     child: Align(
                       alignment: Alignment.bottomCenter,
                       child: Text(
-                        _calculateDifference(),
+                        _daysDifference,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white,
