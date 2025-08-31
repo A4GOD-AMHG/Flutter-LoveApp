@@ -12,41 +12,30 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Stack(
+    return Stack(
       alignment: Alignment.center,
       children: [
-        Positioned.fill(child: ScatteredSparkles()),
-        Positioned(top: 0, left: 0, right: 0, child: Header()),
+        const Positioned.fill(child: ScatteredSparkles()),
+        const Positioned(top: 0, left: 0, right: 0, child: Header()),
         Positioned(
           top: 100,
           child: Center(
-            child: _DateCounterWrapper(),
+            child: DateCounter(startDate: _startDate),
           ),
         ),
-        Positioned(
-          top: 320,
+        const Positioned(
+          top: 350,
           left: 0,
           right: 0,
           child: LoveMessage(),
         ),
-        Positioned(
-          top: 470,
+        const Positioned(
+          top: 550,
           left: 0,
           right: 0,
           child: LoveAnimals(),
         ),
       ],
-    );
-  }
-}
-
-class _DateCounterWrapper extends StatelessWidget {
-  const _DateCounterWrapper();
-
-  @override
-  Widget build(BuildContext context) {
-    return DateCounter(
-      startDate: HomeScreen._startDate,
     );
   }
 }
