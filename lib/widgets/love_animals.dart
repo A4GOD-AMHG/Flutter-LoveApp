@@ -14,7 +14,7 @@ class LoveAnimals extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(2),
+            padding: const EdgeInsets.all(1),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF2E305F) : Colors.green.shade50,
               borderRadius: BorderRadius.circular(5),
@@ -23,9 +23,11 @@ class LoveAnimals extends StatelessWidget {
                 width: 2,
               ),
             ),
-            child: Text(
-              '🐸',
-              style: const TextStyle(fontSize: 50),
+            child: Image.asset(
+              'assets/frog.png',
+              width: 75,
+              height: 75,
+              fit: BoxFit.contain,
             ),
           ),
           const SizedBox(width: 20),
@@ -40,7 +42,7 @@ class LoveAnimals extends StatelessWidget {
           ),
           const SizedBox(width: 20),
           Container(
-            padding: const EdgeInsets.all(2),
+            padding: const EdgeInsets.all(1),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF2E305F) : Colors.yellow.shade50,
               borderRadius: BorderRadius.circular(5),
@@ -49,9 +51,11 @@ class LoveAnimals extends StatelessWidget {
                 width: 2,
               ),
             ),
-            child: Text(
-              '🐤',
-              style: const TextStyle(fontSize: 50),
+            child: Image.asset(
+              'assets/duck.png',
+              width: 75,
+              height: 75,
+              fit: BoxFit.contain,
             ),
           ),
         ],

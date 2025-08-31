@@ -99,9 +99,7 @@ class _GlassText extends StatelessWidget {
           ),
         ),
         child: Text(
-          "De aquí hasta a la luna\n"
-          "a paso de ranita enferma coja\n"
-          "que carga un pollito enfermo",
+          "De aquí hasta a la luna a saltitos de ranita bebé, enferma, coja y con suero que carga un pollito enfermo y con suero",
           textAlign: TextAlign.center,
           style: GoogleFonts.comicNeue(
             fontSize: 24,

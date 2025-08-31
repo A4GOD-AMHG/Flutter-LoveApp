@@ -1,9 +1,14 @@
 import 'package:love_app/utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 
-class Header extends StatelessWidget {
+class Header extends StatefulWidget {
   const Header({super.key});
 
+  @override
+  State<Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<Header> {
   void _showDedicationDialog(BuildContext context) {
     final themeController = ThemeProvider.of(context);
     final isDark = themeController.isDark;
@@ -91,8 +96,7 @@ class Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeController = ThemeProvider.of(context);
-    final isDark = themeController.isDark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       decoration: BoxDecoration(
@@ -115,7 +119,7 @@ class Header extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Alexis x Anyel',
+                  'Anyel x Alexis',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -128,7 +132,7 @@ class Header extends StatelessWidget {
                 children: [
                   Switch(
                     value: isDark,
-                    onChanged: (_) => themeController.toggle(),
+                    onChanged: (_) => ThemeProvider.of(context).toggle(),
                     activeColor: Color(0xFF000000),
                     activeTrackColor: const Color(0xFF7E7A83),
                     inactiveThumbColor: Colors.amber.shade700,
