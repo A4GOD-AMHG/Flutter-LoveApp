@@ -10,8 +10,6 @@ void main() {
 
   GoogleFonts.config.allowRuntimeFetching = false;
 
-  FlutterNativeSplash.remove();
-
   runApp(MyRoot());
 }
 

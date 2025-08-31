@@ -32,4 +32,6 @@ flutter:
     - assets/icon_app.png
     - assets/bg_icon.png
     - assets/native_splash.png
+    - assets/frog.png
+    - assets/duck.png
     - assets/google_fonts/
