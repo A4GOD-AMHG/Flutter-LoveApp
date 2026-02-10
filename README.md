@@ -62,9 +62,9 @@ assets/
 
 ## Capturas de Pantalla
 <div align="center" style="display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0;">
-  <img src="./screenshots/splash_screen.jpg" alt="Mobile" style="width: 250px; margin: 10px;"/>
-  <img src="./screenshots/home_screen.jpg" alt="iPad" style="width: 250px; margin: 10px;"/>
-  <img src="./screenshots/messages_screen.jpg" alt="Desktop" style="width: 250px; margin: 10px; max-width: 100%;"/>
+  <img src="./screenshots/splash_screen.jpg" alt="Splash Screen" style="width: 250px; margin: 10px;"/>
+  <img src="./screenshots/home_screen.jpg" alt="Home" style="width: 250px; margin: 10px;"/>
+  <img src="./screenshots/messages_screen.jpg" alt="Messages" style="width: 250px; margin: 10px; max-width: 100%;"/>
 </div>
 
 ## Licencia
