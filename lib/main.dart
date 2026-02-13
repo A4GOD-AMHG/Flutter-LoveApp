@@ -1,8 +1,10 @@
 import 'package:flutter_native_splash/flutter_native_splash.dart';
-import 'package:love_app/utils/theme_controller.dart';
-import 'package:love_app/widgets/splash_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
+import 'services/storage_service.dart';
+import 'utils/theme_controller.dart';
+import 'widgets/splash_screen.dart';
+import 'screens/login_screen.dart';
 
 void main() {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -19,13 +21,19 @@ class MyRoot extends StatefulWidget {
 }
 
 class _MyRootState extends State<MyRoot> {
-  final ThemeController _controller = ThemeController(ThemeMode.dark);
+  final StorageService _storage = StorageService();
+  late final ThemeController _controller;
   late final ThemeData _lightTheme;
   late final ThemeData _darkTheme;
+  bool _isLoading = true;
+  bool _isLoggedIn = false;
 
   @override
   void initState() {
     super.initState();
+    _controller = ThemeController(ThemeMode.dark);
+    _initializeApp();
+
     _lightTheme = ThemeData(
       colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.deepPurple, brightness: Brightness.light),
@@ -46,8 +54,35 @@ class _MyRootState extends State<MyRoot> {
     );
   }
 
+  Future<void> _initializeApp() async {
+    final isDark = await _storage.getThemeMode();
+    final isLoggedIn = await _storage.isLoggedIn();
+
+    setState(() {
+      if (isDark != null) {
+        _controller.setMode(isDark ? ThemeMode.dark : ThemeMode.light);
+      }
+      _isLoggedIn = isLoggedIn;
+      _isLoading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFF1a1625),
+          body: Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
+      );
+    }
+
     return ThemeProvider(
       controller: _controller,
       child: ListenableBuilder(
@@ -59,7 +94,11 @@ class _MyRootState extends State<MyRoot> {
             theme: _lightTheme,
             darkTheme: _darkTheme,
             themeMode: _controller.mode,
-            home: const SplashScreen(),
+            home: _isLoggedIn ? const SplashScreen() : const LoginScreen(),
+            routes: {
+              '/login': (context) => const LoginScreen(),
+              '/home': (context) => const SplashScreen(),
+            },
           );
         },
       ),
