@@ -1,7 +1,7 @@
 import 'package:love_app/screens/messages_screen.dart';
 import 'package:love_app/screens/journey_screen.dart';
 import 'package:love_app/screens/alarms_screen.dart';
-import 'package:love_app/screens/notes_screen.dart';
+import 'package:love_app/screens/tasks_screen.dart';
 import 'package:love_app/screens/home_screen.dart';
 import 'package:love_app/widgets/background.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +20,7 @@ class _LayoutWidgetState extends State<LayoutWidget> {
     HomeScreen(),
     JourneyScreen(),
     AlarmsScreen(),
-    NotesScreen(),
+    TasksScreen(),
     MessagesScreen(),
   ];
 

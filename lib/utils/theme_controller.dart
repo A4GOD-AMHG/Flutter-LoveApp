@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../services/storage_service.dart';
 
 class ThemeController extends ChangeNotifier {
   ThemeMode _mode;
+  final StorageService _storage = StorageService();
+  
   ThemeController([this._mode = ThemeMode.system]);
 
   ThemeMode get mode => _mode;
@@ -13,14 +16,20 @@ class ThemeController extends ChangeNotifier {
     } else {
       _mode = ThemeMode.dark;
     }
+    _storage.saveThemeMode(_mode == ThemeMode.dark);
     notifyListeners();
   }
 
-  void set(ThemeMode mode) {
+  void setMode(ThemeMode mode) {
     if (_mode != mode) {
       _mode = mode;
+      _storage.saveThemeMode(_mode == ThemeMode.dark);
       notifyListeners();
     }
+  }
+
+  void set(ThemeMode mode) {
+    setMode(mode);
   }
 }
 
