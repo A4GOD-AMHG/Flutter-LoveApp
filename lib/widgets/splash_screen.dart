@@ -3,6 +3,8 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:love_app/widgets/layout_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import '../services/storage_service.dart';
+import '../screens/login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,9 +14,14 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final StorageService _storage = StorageService();
+  bool _isLoggedIn = false;
+  bool _isChecking = true;
+
   @override
   void initState() {
     super.initState();
+    _checkAuth();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 100), () {
         FlutterNativeSplash.remove();
@@ -22,12 +29,31 @@ class _SplashScreenState extends State<SplashScreen> {
     });
   }
 
+  Future<void> _checkAuth() async {
+    final isLoggedIn = await _storage.isLoggedIn();
+    setState(() {
+      _isLoggedIn = isLoggedIn;
+      _isChecking = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isChecking) {
+      return Scaffold(
+        backgroundColor: Colors.black45,
+        body: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        ),
+      );
+    }
+
     return AnimatedSplashScreen(
       splash: const _SplashContent(),
-      nextScreen: const LayoutWidget(),
-      duration: 1800, // Reducido de 2500 a 1800ms
+      nextScreen: _isLoggedIn ? const LayoutWidget() : const LoginScreen(),
+      duration: 1800,
       splashIconSize: 500,
       backgroundColor: Colors.black45,
     );

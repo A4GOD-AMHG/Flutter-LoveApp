@@ -19,9 +19,13 @@ class _LoginScreenState extends State<LoginScreen>
 
   late AnimationController _slideController;
   late AnimationController _fadeController;
+  late AnimationController _scaleController;
+  late AnimationController _pulseController;
   late Animation<Offset> _anyelSlideAnimation;
   late Animation<Offset> _alexisSlideAnimation;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -34,6 +38,14 @@ class _LoginScreenState extends State<LoginScreen>
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
 
     _anyelSlideAnimation = Tween<Offset>(
       begin: const Offset(-0.3, 0),
@@ -54,12 +66,24 @@ class _LoginScreenState extends State<LoginScreen>
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeIn),
     );
+
+    _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
+    );
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _scaleController.forward();
   }
 
   @override
   void dispose() {
     _slideController.dispose();
     _fadeController.dispose();
+    _scaleController.dispose();
+    _pulseController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -102,7 +126,10 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       await _apiService.login(selectedUser!, _passwordController.text);
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home',
+          (route) => false,
+        );
       }
     } catch (e) {
       setState(() {
@@ -137,9 +164,12 @@ class _LoginScreenState extends State<LoginScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    '💕',
-                    style: const TextStyle(fontSize: 64),
+                  ScaleTransition(
+                    scale: _pulseAnimation,
+                    child: Text(
+                      '💕',
+                      style: const TextStyle(fontSize: 64),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -169,23 +199,26 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ),
                     const SizedBox(height: 32),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildUserAvatar(
-                          'anyel',
-                          '🐸',
-                          'Anyel',
-                          const Color(0xFF90EE90),
-                        ),
-                        const SizedBox(width: 48),
-                        _buildUserAvatar(
-                          'alexis',
-                          '🐥',
-                          'Alexis',
-                          const Color(0xFFFFD700),
-                        ),
-                      ],
+                    ScaleTransition(
+                      scale: _scaleAnimation,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildUserAvatar(
+                            'anyel',
+                            'assets/frog.png',
+                            'Anyel',
+                            const Color(0xFF90EE90),
+                          ),
+                          const SizedBox(width: 48),
+                          _buildUserAvatar(
+                            'alexis',
+                            'assets/duck.png',
+                            'Alexis',
+                            const Color(0xFFFFD700),
+                          ),
+                        ],
+                      ),
                     ),
                   ] else ...[
                     SlideTransition(
@@ -194,19 +227,36 @@ class _LoginScreenState extends State<LoginScreen>
                           : _alexisSlideAnimation,
                       child: Column(
                         children: [
-                          Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: selectedUser == 'anyel'
-                                  ? const Color(0xFF90EE90).withOpacity(0.3)
-                                  : const Color(0xFFFFD700).withOpacity(0.3),
-                            ),
-                            child: Center(
-                              child: Text(
-                                selectedUser == 'anyel' ? '🐸' : '🐥',
-                                style: const TextStyle(fontSize: 64),
+                          Hero(
+                            tag: 'avatar_$selectedUser',
+                            child: Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: selectedUser == 'anyel'
+                                    ? const Color(0xFF90EE90).withOpacity(0.3)
+                                    : const Color(0xFFFFD700).withOpacity(0.3),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: selectedUser == 'anyel'
+                                        ? const Color(0xFF90EE90).withOpacity(0.5)
+                                        : const Color(0xFFFFD700).withOpacity(0.5),
+                                    blurRadius: 20,
+                                    spreadRadius: 5,
+                                  ),
+                                ],
+                              ),
+                              child: ClipOval(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Image.asset(
+                                    selectedUser == 'anyel'
+                                        ? 'assets/frog.png'
+                                        : 'assets/duck.png',
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -343,44 +393,74 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _buildUserAvatar(
     String username,
-    String emoji,
+    String imagePath,
     String name,
     Color color,
   ) {
-    return GestureDetector(
-      onTap: () => _selectUser(username),
-      child: Column(
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withOpacity(0.3),
-              border: Border.all(
-                color: color,
-                width: 3,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => _selectUser(username),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.elasticOut,
+          builder: (context, value, child) {
+            return Transform.scale(
+              scale: value,
+              child: child,
+            );
+          },
+          child: Column(
+            children: [
+              ScaleTransition(
+                scale: _pulseAnimation,
+                child: Hero(
+                  tag: 'avatar_$username',
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color.withOpacity(0.3),
+                      border: Border.all(
+                        color: color,
+                        width: 3,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withOpacity(0.4),
+                          blurRadius: 15,
+                          spreadRadius: 3,
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Image.asset(
+                          imagePath,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            child: Center(
-              child: Text(
-                emoji,
-                style: const TextStyle(fontSize: 48),
+              const SizedBox(height: 8),
+              Text(
+                name,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: ThemeProvider.of(context).isDark
+                      ? Colors.white
+                      : Colors.black87,
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            name,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: ThemeProvider.of(context).isDark
-                  ? Colors.white
-                  : Colors.black87,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -84,9 +84,11 @@ class _TasksScreenState extends State<TasksScreen> {
                 style: TextStyle(color: textColor),
                 decoration: InputDecoration(
                   labelText: 'Título',
-                  labelStyle: TextStyle(color: textColor.withOpacity(0.7)),
+                  labelStyle:
+                      TextStyle(color: textColor.withValues(alpha: 0.7)),
                   enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: textColor.withOpacity(0.3)),
+                    borderSide:
+                        BorderSide(color: textColor.withValues(alpha: 0.3)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: textColor),
@@ -100,9 +102,11 @@ class _TasksScreenState extends State<TasksScreen> {
                 style: TextStyle(color: textColor),
                 decoration: InputDecoration(
                   labelText: 'Descripción',
-                  labelStyle: TextStyle(color: textColor.withOpacity(0.7)),
+                  labelStyle:
+                      TextStyle(color: textColor.withValues(alpha: 0.7)),
                   enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: textColor.withOpacity(0.3)),
+                    borderSide:
+                        BorderSide(color: textColor.withValues(alpha: 0.3)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: textColor),
@@ -117,6 +121,13 @@ class _TasksScreenState extends State<TasksScreen> {
               child: Text('Cancelar', style: TextStyle(color: textColor)),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromARGB(255, 154, 53, 194),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
               onPressed: () => Navigator.pop(context, true),
               child: const Text('Crear'),
             ),
@@ -156,8 +167,12 @@ class _TasksScreenState extends State<TasksScreen> {
       _loadTodos();
     } catch (e) {
       if (mounted) {
+        final errorMsg = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al actualizar: $e')),
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -182,11 +197,22 @@ class _TasksScreenState extends State<TasksScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
+              style: TextButton.styleFrom(
+                foregroundColor: textColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
               child: Text('Cancelar', style: TextStyle(color: textColor)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
               child: const Text('Eliminar'),
             ),
           ],
@@ -223,25 +249,61 @@ class _TasksScreenState extends State<TasksScreen> {
           child: Row(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildFilterChip('Todas', 'all', textColor),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Completadas', 'completed', textColor),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Pendientes', 'incompleted', textColor),
-                      const SizedBox(width: 8),
-                      _buildFilterChip(
-                          'Mis Completadas', 'completed_by_me', textColor),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: textColor.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _filter,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    icon: Icon(Icons.filter_list, color: textColor),
+                    style: TextStyle(color: textColor, fontSize: 16),
+                    dropdownColor: cardColor,
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _filter = newValue;
+                        });
+                        _loadTodos();
+                      }
+                    },
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('📋 Todas')),
+                      DropdownMenuItem(
+                          value: 'completed', child: Text('✅ Completadas')),
+                      DropdownMenuItem(
+                          value: 'incompleted', child: Text('⏳ Pendientes')),
+                      DropdownMenuItem(
+                          value: 'completed_by_me',
+                          child: Text('🎯 Mis Completadas')),
                     ],
                   ),
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.add_circle, color: textColor, size: 32),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
                 onPressed: _createTodo,
+                icon: const Icon(Icons.add_circle_outline, size: 24),
+                label: const Text(
+                  'Nueva',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color.fromARGB(255, 130, 28, 170),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
             ],
           ),
@@ -259,13 +321,14 @@ class _TasksScreenState extends State<TasksScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.check_circle_outline,
-                              size: 64, color: textColor.withOpacity(0.5)),
+                              size: 64,
+                              color: textColor.withValues(alpha: 0.5)),
                           const SizedBox(height: 16),
                           Text(
                             'No hay tareas',
                             style: TextStyle(
                               fontSize: 18,
-                              color: textColor.withOpacity(0.7),
+                              color: textColor.withValues(alpha: 0.7),
                             ),
                           ),
                         ],
@@ -284,26 +347,6 @@ class _TasksScreenState extends State<TasksScreen> {
                     ),
         ),
       ],
-    );
-  }
-
-  Widget _buildFilterChip(String label, String value, Color textColor) {
-    final isSelected = _filter == value;
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        setState(() {
-          _filter = value;
-        });
-        _loadTodos();
-      },
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.white : textColor,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-      ),
-      backgroundColor: Colors.transparent,
-      selectedColor: const Color(0xFF9B59B6),
     );
   }
 
@@ -337,9 +380,13 @@ class _TasksScreenState extends State<TasksScreen> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: textColor,
+                      color: isCompletedByMe
+                          ? textColor.withValues(alpha: 0.5)
+                          : textColor,
                       decoration:
                           isCompletedByMe ? TextDecoration.lineThrough : null,
+                      decorationThickness: isCompletedByMe ? 2.5 : null,
+                      decorationColor: isCompletedByMe ? Colors.red : null,
                     ),
                   ),
                 ),
@@ -350,7 +397,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                 Checkbox(
                   value: isCompletedByMe,
-                  onChanged: (value) => _toggleTodo(todo),
+                  onChanged: todo.isCompleted ? null : (value) => _toggleTodo(todo),
                 ),
               ],
             ),
@@ -360,7 +407,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 todo.description,
                 style: TextStyle(
                   fontSize: 14,
-                  color: textColor.withOpacity(0.8),
+                  color: textColor.withValues(alpha: 0.8),
                 ),
               ),
             ],
@@ -371,18 +418,81 @@ class _TasksScreenState extends State<TasksScreen> {
                   'Por: ${todo.creatorUsername}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: textColor.withOpacity(0.6),
+                    color: textColor.withValues(alpha: 0.6),
                   ),
                 ),
                 const SizedBox(width: 16),
-                Text(
-                  '🐸 ${todo.completedAnyel ? "✓" : "✗"}',
-                  style: const TextStyle(fontSize: 14),
+                Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF90EE90).withValues(alpha: 0.2),
+                        border: Border.all(
+                          color:
+                              todo.completedAnyel ? Colors.green : Colors.grey,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Image.asset(
+                            'assets/frog.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      todo.completedAnyel ? "✓" : "✗",
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: todo.completedAnyel ? Colors.green : Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '🐥 ${todo.completedAlexis ? "✓" : "✗"}',
-                  style: const TextStyle(fontSize: 14),
+                const SizedBox(width: 12),
+                Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                        border: Border.all(
+                          color:
+                              todo.completedAlexis ? Colors.green : Colors.grey,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Image.asset(
+                            'assets/duck.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      todo.completedAlexis ? "✓" : "✗",
+                      style: TextStyle(
+                        fontSize: 14,
+                        color:
+                            todo.completedAlexis ? Colors.green : Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
                 if (todo.isCompleted) ...[
                   const SizedBox(width: 8),

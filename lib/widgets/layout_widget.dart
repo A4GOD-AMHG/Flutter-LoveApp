@@ -3,6 +3,7 @@ import 'package:love_app/screens/journey_screen.dart';
 import 'package:love_app/screens/alarms_screen.dart';
 import 'package:love_app/screens/tasks_screen.dart';
 import 'package:love_app/screens/home_screen.dart';
+import 'package:love_app/screens/settings_screen.dart';
 import 'package:love_app/widgets/background.dart';
 import 'package:flutter/material.dart';
 
@@ -22,6 +23,7 @@ class _LayoutWidgetState extends State<LayoutWidget> {
     AlarmsScreen(),
     TasksScreen(),
     MessagesScreen(),
+    SettingsScreen(),
   ];
 
   @override
@@ -63,6 +65,10 @@ class _LayoutWidgetState extends State<LayoutWidget> {
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble),
               label: 'Mensajes'),
+          NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings),
+              label: 'Opciones'),
         ],
       ),
     );

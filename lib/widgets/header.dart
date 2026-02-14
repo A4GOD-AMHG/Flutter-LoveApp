@@ -133,7 +133,7 @@ class _HeaderState extends State<Header> {
                   Switch(
                     value: isDark,
                     onChanged: (_) => ThemeProvider.of(context).toggle(),
-                    activeColor: Color(0xFF000000),
+                    activeThumbColor: Color(0xFF000000),
                     activeTrackColor: const Color(0xFF7E7A83),
                     inactiveThumbColor: Colors.amber.shade700,
                     inactiveTrackColor: Colors.amber.shade100,
