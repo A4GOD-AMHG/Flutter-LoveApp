@@ -25,15 +25,19 @@ class Message {
 
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
-      id: json['id'],
-      senderId: json['sender_id'],
-      receiverId: json['receiver_id'],
-      sender: User.fromJson(json['sender']),
-      receiver: User.fromJson(json['receiver']),
-      content: json['content'],
-      status: json['status'],
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      id: json['id'] as int? ?? 0,
+      senderId: json['sender_id'] as int? ?? 0,
+      receiverId: json['receiver_id'] as int? ?? 0,
+      sender: User.fromJson(json['sender'] as Map<String, dynamic>? ?? {}),
+      receiver: User.fromJson(json['receiver'] as Map<String, dynamic>? ?? {}),
+      content: json['content'] as String? ?? '',
+      status: json['status'] as String? ?? 'sent',
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.now(),
     );
   }
 

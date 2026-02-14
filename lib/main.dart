@@ -5,6 +5,7 @@ import 'services/storage_service.dart';
 import 'utils/theme_controller.dart';
 import 'widgets/splash_screen.dart';
 import 'screens/login_screen.dart';
+import 'widgets/layout_widget.dart';
 
 void main() {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,8 @@ void main() {
 }
 
 class MyRoot extends StatefulWidget {
+  const MyRoot({super.key});
+
   @override
   State<MyRoot> createState() => _MyRootState();
 }
@@ -26,7 +29,6 @@ class _MyRootState extends State<MyRoot> {
   late final ThemeData _lightTheme;
   late final ThemeData _darkTheme;
   bool _isLoading = true;
-  bool _isLoggedIn = false;
 
   @override
   void initState() {
@@ -56,13 +58,11 @@ class _MyRootState extends State<MyRoot> {
 
   Future<void> _initializeApp() async {
     final isDark = await _storage.getThemeMode();
-    final isLoggedIn = await _storage.isLoggedIn();
 
     setState(() {
       if (isDark != null) {
         _controller.setMode(isDark ? ThemeMode.dark : ThemeMode.light);
       }
-      _isLoggedIn = isLoggedIn;
       _isLoading = false;
     });
   }
@@ -94,10 +94,10 @@ class _MyRootState extends State<MyRoot> {
             theme: _lightTheme,
             darkTheme: _darkTheme,
             themeMode: _controller.mode,
-            home: _isLoggedIn ? const SplashScreen() : const LoginScreen(),
+            home: const SplashScreen(),
             routes: {
               '/login': (context) => const LoginScreen(),
-              '/home': (context) => const SplashScreen(),
+              '/home': (context) => const LayoutWidget(),
             },
           );
         },

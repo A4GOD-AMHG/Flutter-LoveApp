@@ -24,6 +24,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   WebSocketChannel? _channel;
   bool _isLoading = true;
   int? _currentUserId;
+  String? _currentUsername;
 
   @override
   void initState() {
@@ -41,6 +42,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final user = await _storage.getUser();
     setState(() {
       _currentUserId = user?.id;
+      _currentUsername = user?.username;
     });
   }
 
@@ -51,7 +53,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _messages = messages.reversed.toList();
         _isLoading = false;
       });
-      _scrollToBottom();
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      });
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -69,31 +76,48 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final token = await _storage.getToken();
       if (token != null) {
         final wsUrl = '${_apiService.getWebSocketUrl()}?token=$token';
-        _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+        
+        try {
+          _channel = WebSocketChannel.connect(
+            Uri.parse(wsUrl),
+          );
 
-        _channel!.stream.listen(
-          (data) {
-            try {
-              final messageData = jsonDecode(data);
-              final message = Message.fromJson(messageData);
-              setState(() {
-                _messages.add(message);
-              });
-              _scrollToBottom();
-            } catch (e) {
-              debugPrint('Error recibiendo mensaje de WebSocket: $e');
-            }
-          },
-          onError: (error) {
-            debugPrint('WebSocket error: $error');
-          },
-          onDone: () {
-            debugPrint('WebSocket conexión cerrada');
-          },
-        );
+          _channel!.stream.listen(
+            (data) {
+              try {
+                print('📩 WebSocket RAW data: $data');
+                final messageData = jsonDecode(data);
+                print('📦 Parsed messageData: $messageData');
+                final message = Message.fromJson(messageData);
+                print('✉️ Message object - senderId: ${message.senderId}, currentUserId: $_currentUserId, content: "${message.content}"');
+                
+                if (mounted && message.senderId != _currentUserId) {
+                  print('✅ Adding message from other user');
+                  setState(() {
+                    _messages.add(message);
+                  });
+                  _scrollToBottom();
+                } else {
+                  print('❌ Ignoring message (own message or not mounted)');
+                }
+              } catch (e) {
+                print('❗ Error parsing WebSocket message: $e');
+              }
+            },
+            onError: (error) {
+              // Silently handle WebSocket errors
+            },
+            onDone: () {
+              // Connection closed
+            },
+            cancelOnError: false,
+          );
+        } catch (wsError) {
+          // WebSocket connection failed, messages will load via HTTP
+        }
       }
     } catch (e) {
-      debugPrint('Error conectado con WebSocket: $e');
+      // General WebSocket error
     }
   }
 
@@ -116,7 +140,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _messageController.clear();
 
     try {
-      await _apiService.sendMessage(content);
+      final message = await _apiService.sendMessage(content);
+      print('📤 Sent message - senderId: ${message.senderId}, currentUserId: $_currentUserId, content: "${message.content}"');
+      
+      if (mounted) {
+        setState(() {
+          _messages.add(message);
+        });
+        _scrollToBottom();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -171,7 +203,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '¡Envía el primer mensaje!',
+                            'Escribe algo para comenzar la conversación',
                             style: TextStyle(
                               fontSize: 14,
                               color: textColor.withOpacity(0.5),
@@ -197,7 +229,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     ),
         ),
         Container(
-          color: bgColor,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0d0818) : const Color(0xFFE8E8E8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
           padding: const EdgeInsets.all(16),
           child: SafeArea(
             child: Row(
@@ -213,7 +254,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         color: textColor.withOpacity(0.5),
                       ),
                       filled: true,
-                      fillColor: cardColor,
+                      fillColor: isDark ? const Color(0xFF1a1625) : Colors.white,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -258,78 +299,108 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ? const Color(0xFF9B59B6)
         : cardColor;
     final msgTextColor = isMe ? Colors.white : textColor;
-    final avatar = message.sender.username == 'anyel' ? '🐸' : '🐥';
+    
+    final displayUsername = isMe ? _currentUsername : message.sender.username;
+    final avatarPath = displayUsername == 'anyel' 
+        ? 'assets/frog.png' 
+        : 'assets/duck.png';
+    final avatarColor = displayUsername == 'anyel'
+        ? const Color(0xFF90EE90)
+        : const Color(0xFFFFD700);
     final time = _formatTime(message.createdAt);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: alignment,
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment:
+            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Row(
-            mainAxisAlignment:
-                isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!isMe) ...[
-                Text(avatar, style: const TextStyle(fontSize: 24)),
-                const SizedBox(width: 8),
-              ],
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bgColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isMe ? 16 : 4),
-                      bottomRight: Radius.circular(isMe ? 4 : 16),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!isMe)
-                        Text(
-                          message.sender.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: msgTextColor.withOpacity(0.8),
-                          ),
-                        ),
-                      Text(
-                        message.content,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: msgTextColor,
-                        ),
-                      ),
-                    ],
-                  ),
+          if (!isMe) ...[
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: avatarColor.withOpacity(0.3),
+                border: Border.all(color: avatarColor, width: 2),
+              ),
+              child: ClipOval(
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.asset(avatarPath, fit: BoxFit.contain),
                 ),
               ),
-              if (isMe) ...[
-                const SizedBox(width: 8),
-                Text(avatar, style: const TextStyle(fontSize: 24)),
-              ],
-            ],
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              time,
-              style: TextStyle(
-                fontSize: 10,
-                color: textColor.withOpacity(0.5),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(isMe ? 16 : 4),
+                  bottomRight: Radius.circular(isMe ? 4 : 16),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isMe)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        message.sender.name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: msgTextColor.withOpacity(0.8),
+                        ),
+                      ),
+                    ),
+                  Text(
+                    message.content,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: msgTextColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: msgTextColor.withOpacity(0.6),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+          if (isMe) ...[
+            const SizedBox(width: 8),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: avatarColor.withOpacity(0.3),
+                border: Border.all(color: avatarColor, width: 2),
+              ),
+              child: ClipOval(
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.asset(avatarPath, fit: BoxFit.contain),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

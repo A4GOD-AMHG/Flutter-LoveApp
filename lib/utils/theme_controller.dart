@@ -35,8 +35,8 @@ class ThemeController extends ChangeNotifier {
 
 class ThemeProvider extends InheritedNotifier<ThemeController> {
   const ThemeProvider(
-      {super.key, required ThemeController controller, required Widget child})
-      : super(notifier: controller, child: child);
+      {super.key, required ThemeController controller, required super.child})
+      : super(notifier: controller);
 
   static ThemeController of(BuildContext context) {
     final provider =

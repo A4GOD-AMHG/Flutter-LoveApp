@@ -147,7 +147,9 @@ class ApiService {
       final data = jsonDecode(response.body);
       return Todo.fromJson(data['todo']);
     } else {
-      throw Exception('Error al actualizar estado: ${response.body}');
+      final errorData = jsonDecode(response.body);
+      final errorMessage = errorData['message'] ?? 'Error desconocido';
+      throw Exception(errorMessage);
     }
   }
 
