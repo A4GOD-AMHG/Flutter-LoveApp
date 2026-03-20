@@ -3,6 +3,7 @@ import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/header.dart';
+import '../widgets/server_config_cog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -114,7 +115,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF9B59B6),
               ),
-              child: const Text('Cambiar'),
+              child: const Text(
+                'Cambiar',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -169,7 +173,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Cerrar Sesión'),
+              child: const Text(
+                'Cerrar Sesión',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -205,45 +212,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         const Header(),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, right: 12),
+            child: ServerConfigCog(
+              iconColor: textColor.withValues(alpha: 0.7),
+              onSaved: () => setState(() {}),
+            ),
+          ),
+        ),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-                Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16.0),
-                        child: Container(
-                          width: 110,
-                          height: 110,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _username == 'anyel'
-                                ? const Color(0xFF90EE90).withValues(alpha: 0.3)
-                                : const Color(0xFFFFD700).withValues(alpha: 0.3),
-                            border: Border.all(
-                              color: _username == 'anyel'
-                                  ? const Color(0xFF90EE90)
-                                  : const Color(0xFFFFD700),
-                              width: 2,
-                            ),
-                          ),
-                          child: ClipOval(
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Image.asset(
-                                _username == 'anyel'
-                                    ? 'assets/frog.png'
-                                    : 'assets/duck.png',
-                                fit: BoxFit.contain,
-                              ),
-                            ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16.0),
+                    child: Container(
+                      width: 110,
+                      height: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _username == 'anyel'
+                            ? const Color(0xFF90EE90).withValues(alpha: 0.3)
+                            : const Color(0xFFFFD700).withValues(alpha: 0.3),
+                        border: Border.all(
+                          color: _username == 'anyel'
+                              ? const Color(0xFF90EE90)
+                              : const Color(0xFFFFD700),
+                          width: 2,
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Image.asset(
+                            _username == 'anyel'
+                                ? 'assets/frog.png'
+                                : 'assets/duck.png',
+                            fit: BoxFit.contain,
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
+                ],
+              ),
               const SizedBox(height: 24),
               Text(
                 'Cuenta',
@@ -302,9 +319,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
+            color: cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: BoxBorder.all(color: Colors.white38)),
         child: Row(
           children: [
             Container(

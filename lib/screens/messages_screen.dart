@@ -1,11 +1,16 @@
+import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/storage_service.dart';
+import '../services/sync_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/header.dart';
 import '../models/message.dart';
+import '../models/user.dart';
 import 'dart:convert';
+
+enum _ConnectionStatus { online, offline }
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -25,10 +30,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
   bool _isLoading = true;
   int? _currentUserId;
   String? _currentUsername;
+  User? _currentUserFull;
+  _ConnectionStatus _connectionStatus = _ConnectionStatus.online;
+  final Set<int> _pendingLocalIds = {};
+  StreamSubscription<void>? _syncSub;
+
+  int _currentPage = 1;
+  bool _hasMoreMessages = true;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
+    _syncSub = SyncService.instance.onSyncComplete.listen((_) {
+      _loadMessages();
+    });
     _initialize();
   }
 
@@ -43,17 +60,35 @@ class _MessagesScreenState extends State<MessagesScreen> {
     setState(() {
       _currentUserId = user?.id;
       _currentUsername = user?.username;
+      _currentUserFull = user;
     });
   }
 
   Future<void> _loadMessages() async {
     try {
-      final messages = await _apiService.getConversation(perPage: 100);
+      final messages = await _apiService.getConversation(page: 1, perPage: 10);
       setState(() {
         _messages = messages.reversed.toList();
+        _pendingLocalIds.clear();
         _isLoading = false;
+        _currentPage = 1;
+        _hasMoreMessages = messages.length == 10;
+        _connectionStatus = _ConnectionStatus.online;
       });
-      
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
+      });
+    } on OfflineException {
+      final cached = await _apiService.getCachedMessages();
+      setState(() {
+        _messages = cached;
+        _isLoading = false;
+        _hasMoreMessages = false;
+        _connectionStatus = _ConnectionStatus.offline;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
@@ -71,37 +106,103 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+  void _onScroll() {
+    if (_scrollController.position.pixels <= 200 &&
+        !_isLoadingMore &&
+        _hasMoreMessages) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_isLoadingMore || !_hasMoreMessages) return;
+
+    setState(() => _isLoadingMore = true);
+
+    final scrollOffset = _scrollController.offset;
+
+    try {
+      final messages = await _apiService.getConversation(
+        page: _currentPage + 1,
+        perPage: 10,
+      );
+
+      if (mounted) {
+        setState(() {
+          _currentPage++;
+          _hasMoreMessages = messages.length == 10;
+          _messages.insertAll(0, messages.reversed);
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            final newOffset = _scrollController.position.maxScrollExtent -
+                (_scrollController.position.maxScrollExtent - scrollOffset);
+            _scrollController.jumpTo(newOffset + (messages.length * 80.0));
+          }
+        });
+
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        if (mounted) {
+          setState(() => _isLoadingMore = false);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar más mensajes: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _connectWebSocket() async {
     try {
       final token = await _storage.getToken();
       if (token != null) {
-        final wsUrl = '${_apiService.getWebSocketUrl()}?token=$token';
-        
+        final configuredWs = await _apiService.getWebSocketUrl();
+        final uri = Uri.parse(configuredWs);
+        final wsUrl = uri.replace(
+          queryParameters: {
+            ...uri.queryParameters,
+            'token': token,
+          },
+        );
+
         try {
           _channel = WebSocketChannel.connect(
-            Uri.parse(wsUrl),
+            wsUrl,
           );
 
           _channel!.stream.listen(
             (data) {
               try {
-                print('📩 WebSocket RAW data: $data');
-                final messageData = jsonDecode(data);
-                print('📦 Parsed messageData: $messageData');
+                final wsData = jsonDecode(data);
+
+                if (wsData['type'] != 'message_sent' ||
+                    wsData['payload'] == null) {
+                  return;
+                }
+
+                final messageData = wsData['payload'];
+
+                if (messageData['content'] == null ||
+                    messageData['content'].toString().trim().isEmpty) {
+                  return;
+                }
+
                 final message = Message.fromJson(messageData);
-                print('✉️ Message object - senderId: ${message.senderId}, currentUserId: $_currentUserId, content: "${message.content}"');
-                
+
                 if (mounted && message.senderId != _currentUserId) {
-                  print('✅ Adding message from other user');
                   setState(() {
                     _messages.add(message);
                   });
                   _scrollToBottom();
-                } else {
-                  print('❌ Ignoring message (own message or not mounted)');
                 }
               } catch (e) {
-                print('❗ Error parsing WebSocket message: $e');
+                // Silently handle parsing errors
               }
             },
             onError: (error) {
@@ -141,13 +242,47 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
     try {
       final message = await _apiService.sendMessage(content);
-      print('📤 Sent message - senderId: ${message.senderId}, currentUserId: $_currentUserId, content: "${message.content}"');
-      
+      if (mounted) {
+        setState(() => _messages.add(message));
+        _scrollToBottom();
+      }
+    } on OfflineException {
+      await SyncService.instance.enqueueMessageSend(content);
+      final tempId = SyncService.tempId();
+      final now = DateTime.now();
+      final sender = _currentUserFull ??
+          User(
+            id: _currentUserId ?? 0,
+            username: _currentUsername ?? '',
+            name: _currentUsername ?? '',
+            createdAt: now,
+            updatedAt: now,
+          );
+      final tempMessage = Message(
+        id: tempId,
+        senderId: sender.id,
+        receiverId: 0,
+        sender: sender,
+        receiver: sender,
+        content: content,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      );
       if (mounted) {
         setState(() {
-          _messages.add(message);
+          _messages.add(tempMessage);
+          _pendingLocalIds.add(tempId);
+          _connectionStatus = _ConnectionStatus.offline;
         });
         _scrollToBottom();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Mensaje guardado. Se enviará cuando tengas conexión.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -160,6 +295,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   @override
   void dispose() {
+    _syncSub?.cancel();
+    _scrollController.removeListener(_onScroll);
     _channel?.sink.close();
     _messageController.dispose();
     _scrollController.dispose();
@@ -172,11 +309,26 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final isDark = themeController.isDark;
     final textColor = isDark ? Colors.white : Colors.black87;
     final cardColor = isDark ? const Color(0xFF2d2640) : Colors.white;
-    final bgColor = isDark ? const Color(0xFF1a1625) : const Color(0xFFF5F5F5);
 
     return Column(
       children: [
         const Header(),
+        if (_connectionStatus == _ConnectionStatus.offline)
+          Container(
+            width: double.infinity,
+            color: Colors.grey[700],
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            child: const Row(
+              children: [
+                Icon(Icons.wifi_off, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  'Sin conexión — mostrando mensajes guardados',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: _isLoading
               ? Center(
@@ -198,7 +350,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             'No hay mensajes aún',
                             style: TextStyle(
                               fontSize: 18,
-                              color: textColor.withOpacity(0.7),
+                              color: textColor.withValues(alpha: 0.7),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -206,7 +358,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             'Escribe algo para comenzar la conversación',
                             style: TextStyle(
                               fontSize: 14,
-                              color: textColor.withOpacity(0.5),
+                              color: textColor.withValues(alpha: 0.5),
                             ),
                           ),
                         ],
@@ -215,15 +367,36 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: _messages.length,
+                      itemCount: _messages.length +
+                          (_isLoadingMore || _hasMoreMessages ? 1 : 0),
                       itemBuilder: (context, index) {
-                        final message = _messages[index];
+                        if (index == 0 &&
+                            (_isLoadingMore || _hasMoreMessages)) {
+                          return _buildLoadingIndicator(textColor);
+                        }
+
+                        final messageIndex =
+                            (_isLoadingMore || _hasMoreMessages)
+                                ? index - 1
+                                : index;
+                        final message = _messages[messageIndex];
                         final isMe = message.senderId == _currentUserId;
-                        return _buildMessageBubble(
-                          message,
-                          isMe,
-                          textColor,
-                          cardColor,
+
+                        final showDateSeparator = messageIndex == 0 ||
+                            !_isSameDay(_messages[messageIndex - 1].createdAt,
+                                message.createdAt);
+
+                        return Column(
+                          children: [
+                            if (showDateSeparator)
+                              _buildDateSeparator(message.createdAt, textColor),
+                            _buildMessageBubble(
+                              message,
+                              isMe,
+                              textColor,
+                              cardColor,
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -233,7 +406,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             color: isDark ? const Color(0xFF0d0818) : const Color(0xFFE8E8E8),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 10,
                 offset: const Offset(0, -2),
               ),
@@ -251,10 +424,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     decoration: InputDecoration(
                       hintText: 'Escribe un mensaje...',
                       hintStyle: TextStyle(
-                        color: textColor.withOpacity(0.5),
+                        color: textColor.withValues(alpha: 0.5),
                       ),
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1a1625) : Colors.white,
+                      fillColor:
+                          isDark ? const Color(0xFF1a1625) : Colors.white,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -294,16 +468,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
     Color textColor,
     Color cardColor,
   ) {
-    final alignment = isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final isPending = _pendingLocalIds.contains(message.id);
     final bgColor = isMe
-        ? const Color(0xFF9B59B6)
+        ? (isPending ? Colors.orange[700]! : const Color(0xFF9B59B6))
         : cardColor;
     final msgTextColor = isMe ? Colors.white : textColor;
-    
+
     final displayUsername = isMe ? _currentUsername : message.sender.username;
-    final avatarPath = displayUsername == 'anyel' 
-        ? 'assets/frog.png' 
-        : 'assets/duck.png';
+    final avatarPath =
+        displayUsername == 'anyel' ? 'assets/frog.png' : 'assets/duck.png';
     final avatarColor = displayUsername == 'anyel'
         ? const Color(0xFF90EE90)
         : const Color(0xFFFFD700);
@@ -322,12 +495,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: avatarColor.withOpacity(0.3),
+                color: avatarColor.withValues(alpha: 0.3),
                 border: Border.all(color: avatarColor, width: 2),
               ),
               child: ClipOval(
                 child: Padding(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(1),
                   child: Image.asset(avatarPath, fit: BoxFit.contain),
                 ),
               ),
@@ -360,7 +533,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: msgTextColor.withOpacity(0.8),
+                          color: msgTextColor.withValues(alpha: 0.8),
                         ),
                       ),
                     ),
@@ -372,12 +545,25 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: msgTextColor.withOpacity(0.6),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        time,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: msgTextColor.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      if (isPending) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.schedule,
+                          size: 10,
+                          color: msgTextColor.withValues(alpha: 0.7),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -390,12 +576,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: avatarColor.withOpacity(0.3),
+                color: avatarColor.withValues(alpha: 0.3),
                 border: Border.all(color: avatarColor, width: 2),
               ),
               child: ClipOval(
                 child: Padding(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(1),
                   child: Image.asset(avatarPath, fit: BoxFit.contain),
                 ),
               ),
@@ -407,13 +593,118 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   String _formatTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final diff = now.difference(dateTime);
+    return '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
 
-    if (diff.inDays > 0) {
-      return '${dateTime.day}/${dateTime.month} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
+  }
+
+  Widget _buildLoadingIndicator(Color textColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: _isLoadingMore
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        textColor.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Cargando mensajes...',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: textColor.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              )
+            : Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: textColor.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  'Desliza hacia arriba para cargar más',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: textColor.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildDateSeparator(DateTime date, Color textColor) {
+    final now = DateTime.now();
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+
+    String label;
+    if (_isSameDay(date, now)) {
+      label = 'Hoy';
+    } else if (_isSameDay(date, yesterday)) {
+      label = 'Ayer';
     } else {
-      return '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+      final months = [
+        'Enero',
+        'Febrero',
+        'Marzo',
+        'Abril',
+        'Mayo',
+        'Junio',
+        'Julio',
+        'Agosto',
+        'Septiembre',
+        'Octubre',
+        'Noviembre',
+        'Diciembre'
+      ];
+      label = '${date.day} de ${months[date.month - 1]}';
     }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              color: textColor.withValues(alpha: 0.3),
+              thickness: 1,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: textColor.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              color: textColor.withValues(alpha: 0.3),
+              thickness: 1,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

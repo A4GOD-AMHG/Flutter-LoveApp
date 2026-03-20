@@ -60,7 +60,7 @@ class _LayoutWidgetState extends State<LayoutWidget> {
           NavigationDestination(
               icon: Icon(Icons.checklist_outlined),
               selectedIcon: Icon(Icons.checklist),
-              label: 'Pendientes'),
+              label: 'Tareas'),
           NavigationDestination(
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble),

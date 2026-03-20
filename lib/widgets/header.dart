@@ -17,8 +17,8 @@ class _HeaderState extends State<Header> {
       context: context,
       builder: (BuildContext context) {
         return TweenAnimationBuilder(
-          tween: Tween<double>(begin: 0, end: 1),
-          duration: Duration(milliseconds: 350),
+          tween: Tween<double>(begin: .25, end: 1),
+          duration: Duration(milliseconds: 250),
           builder: (context, double value, child) {
             return Transform.scale(
               scale: value,

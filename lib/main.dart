@@ -2,6 +2,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
 import 'services/storage_service.dart';
+import 'services/sync_service.dart';
 import 'utils/theme_controller.dart';
 import 'widgets/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -12,6 +13,8 @@ void main() {
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
   GoogleFonts.config.allowRuntimeFetching = false;
+
+  SyncService.instance.startListening();
 
   runApp(MyRoot());
 }

@@ -1,6 +1,7 @@
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../widgets/server_config_cog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -158,233 +159,255 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ScaleTransition(
-                    scale: _pulseAnimation,
-                    child: Text(
-                      '💕',
-                      style: const TextStyle(fontSize: 64),
-                    ),
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8, top: 8),
+                  child: ServerConfigCog(
+                    iconColor: textColor.withOpacity(0.7),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Anyel x Alexis',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Bienvenidos',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: textColor.withOpacity(0.7),
-                    ),
-                  ),
-                  const SizedBox(height: 48),
-                  if (selectedUser == null) ...[
-                    Text(
-                      '¿Quién eres?',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: textColor,
+                ),
+              ),
+              Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ScaleTransition(
+                        scale: _pulseAnimation,
+                        child: Text(
+                          '💕',
+                          style: const TextStyle(fontSize: 64),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 32),
-                    ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildUserAvatar(
-                            'anyel',
-                            'assets/frog.png',
-                            'Anyel',
-                            const Color(0xFF90EE90),
-                          ),
-                          const SizedBox(width: 48),
-                          _buildUserAvatar(
-                            'alexis',
-                            'assets/duck.png',
-                            'Alexis',
-                            const Color(0xFFFFD700),
-                          ),
-                        ],
+                      const SizedBox(height: 16),
+                      Text(
+                        'Anyel x Alexis',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: textColor,
+                        ),
                       ),
-                    ),
-                  ] else ...[
-                    SlideTransition(
-                      position: selectedUser == 'anyel'
-                          ? _anyelSlideAnimation
-                          : _alexisSlideAnimation,
-                      child: Column(
-                        children: [
-                          Hero(
-                            tag: 'avatar_$selectedUser',
-                            child: Container(
-                              width: 120,
-                              height: 120,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: selectedUser == 'anyel'
-                                    ? const Color(0xFF90EE90).withOpacity(0.3)
-                                    : const Color(0xFFFFD700).withOpacity(0.3),
-                                boxShadow: [
-                                  BoxShadow(
+                      const SizedBox(height: 8),
+                      Text(
+                        'Bienvenidos',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: textColor.withOpacity(0.7),
+                        ),
+                      ),
+                      const SizedBox(height: 48),
+                      if (selectedUser == null) ...[
+                        Text(
+                          '¿Quién eres?',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        ScaleTransition(
+                          scale: _scaleAnimation,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildUserAvatar(
+                                'anyel',
+                                'assets/frog.png',
+                                'Anyel',
+                                const Color(0xFF90EE90),
+                              ),
+                              const SizedBox(width: 48),
+                              _buildUserAvatar(
+                                'alexis',
+                                'assets/duck.png',
+                                'Alexis',
+                                const Color(0xFFFFD700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        SlideTransition(
+                          position: selectedUser == 'anyel'
+                              ? _anyelSlideAnimation
+                              : _alexisSlideAnimation,
+                          child: Column(
+                            children: [
+                              Hero(
+                                tag: 'avatar_$selectedUser',
+                                child: Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
                                     color: selectedUser == 'anyel'
-                                        ? const Color(0xFF90EE90).withOpacity(0.5)
-                                        : const Color(0xFFFFD700).withOpacity(0.5),
-                                    blurRadius: 20,
-                                    spreadRadius: 5,
+                                        ? const Color(0xFF90EE90)
+                                            .withOpacity(0.3)
+                                        : const Color(0xFFFFD700)
+                                            .withOpacity(0.3),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: selectedUser == 'anyel'
+                                            ? const Color(0xFF90EE90)
+                                                .withOpacity(0.5)
+                                            : const Color(0xFFFFD700)
+                                                .withOpacity(0.5),
+                                        blurRadius: 20,
+                                        spreadRadius: 5,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: ClipOval(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Image.asset(
-                                    selectedUser == 'anyel'
-                                        ? 'assets/frog.png'
-                                        : 'assets/duck.png',
-                                    fit: BoxFit.contain,
+                                  child: ClipOval(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Image.asset(
+                                        selectedUser == 'anyel'
+                                            ? 'assets/frog.png'
+                                            : 'assets/duck.png',
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            selectedUser == 'anyel' ? 'Anyel' : 'Alexis',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        child: Column(
-                          children: [
-                            TextField(
-                              controller: _passwordController,
-                              obscureText: true,
-                              enabled: !_isLoading,
-                              style: TextStyle(color: textColor),
-                              decoration: InputDecoration(
-                                hintText: 'Contraseña',
-                                hintStyle: TextStyle(
-                                  color: textColor.withOpacity(0.5),
-                                ),
-                                filled: true,
-                                fillColor: cardColor,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.lock_outline,
-                                  color: textColor.withOpacity(0.7),
-                                ),
-                              ),
-                              onSubmitted: (_) => _login(),
-                            ),
-                            if (_errorMessage != null) ...[
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               Text(
-                                _errorMessage!,
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 14,
+                                selectedUser == 'anyel' ? 'Anyel' : 'Alexis',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: textColor,
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 24),
-                            Row(
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            child: Column(
                               children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: _isLoading ? null : _back,
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 16,
-                                      ),
-                                      side: BorderSide(
-                                        color: textColor.withOpacity(0.3),
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
+                                TextField(
+                                  controller: _passwordController,
+                                  obscureText: true,
+                                  enabled: !_isLoading,
+                                  style: TextStyle(color: textColor),
+                                  decoration: InputDecoration(
+                                    hintText: 'Contraseña',
+                                    hintStyle: TextStyle(
+                                      color: textColor.withOpacity(0.5),
                                     ),
-                                    child: Text(
-                                      'Atrás',
-                                      style: TextStyle(
-                                        color: textColor,
-                                        fontSize: 16,
-                                      ),
+                                    filled: true,
+                                    fillColor: cardColor,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    prefixIcon: Icon(
+                                      Icons.lock_outline,
+                                      color: textColor.withOpacity(0.7),
                                     ),
                                   ),
+                                  onSubmitted: (_) => _login(),
                                 ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: _isLoading ? null : _login,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: selectedUser == 'anyel'
-                                          ? const Color(0xFF90EE90)
-                                          : const Color(0xFFFFD700),
-                                      foregroundColor: Colors.black87,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 16,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
+                                if (_errorMessage != null) ...[
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _errorMessage!,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 24),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: _isLoading ? null : _back,
+                                        style: OutlinedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 16,
+                                          ),
+                                          side: BorderSide(
+                                            color: textColor.withOpacity(0.3),
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Atrás',
+                                          style: TextStyle(
+                                            color: textColor,
+                                            fontSize: 16,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                    child: _isLoading
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                Colors.black87,
-                                              ),
-                                            ),
-                                          )
-                                        : const Text(
-                                            'Entrar',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                            ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _isLoading ? null : _login,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              selectedUser == 'anyel'
+                                                  ? const Color(0xFF90EE90)
+                                                  : const Color(0xFFFFD700),
+                                          foregroundColor: Colors.black87,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 16,
                                           ),
-                                  ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                          ),
+                                        ),
+                                        child: _isLoading
+                                            ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                          Color>(
+                                                    Colors.black87,
+                                                  ),
+                                                ),
+                                              )
+                                            : const Text(
+                                                'Entrar',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
-                ],
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
