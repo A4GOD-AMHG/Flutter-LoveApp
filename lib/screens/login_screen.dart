@@ -133,8 +133,10 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } catch (e) {
+      final error = e.toString().replaceFirst('Exception: ', '');
       setState(() {
-        _errorMessage = 'Contraseña incorrecta';
+        _errorMessage =
+            error.contains('Inicio de sesión fallido') ? 'Contraseña incorrecta' : error;
         _isLoading = false;
       });
     }

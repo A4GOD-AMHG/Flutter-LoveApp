@@ -8,6 +8,7 @@ class PendingOperation {
   static const typeSendMessage = 'send_message';
   static const typeUpdateTodoStatus = 'update_todo_status';
   static const typeDeleteTodo = 'delete_todo';
+  static const typeChangePassword = 'change_password';
 
   PendingOperation({
     this.id,
@@ -17,16 +18,17 @@ class PendingOperation {
   });
 
   Map<String, dynamic> toMap() => {
-    if (id != null) 'id': id,
-    'type': type,
-    'payload': payload,
-    'created_at': createdAt.toIso8601String(),
-  };
+        if (id != null) 'id': id,
+        'type': type,
+        'payload': payload,
+        'created_at': createdAt.toIso8601String(),
+      };
 
-  factory PendingOperation.fromMap(Map<String, dynamic> map) => PendingOperation(
-    id: map['id'] as int?,
-    type: map['type'] as String,
-    payload: map['payload'] as String,
-    createdAt: DateTime.parse(map['created_at'] as String),
-  );
+  factory PendingOperation.fromMap(Map<String, dynamic> map) =>
+      PendingOperation(
+        id: map['id'] as int?,
+        type: map['type'] as String,
+        payload: map['payload'] as String,
+        createdAt: DateTime.parse(map['created_at'] as String),
+      );
 }

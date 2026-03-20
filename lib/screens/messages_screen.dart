@@ -1,14 +1,14 @@
 import 'dart:async';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/storage_service.dart';
 import '../services/sync_service.dart';
+import '../services/database_service.dart';
+import '../services/app_state_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/header.dart';
 import '../models/message.dart';
 import '../models/user.dart';
-import 'dart:convert';
 
 enum _ConnectionStatus { online, offline }
 
@@ -22,11 +22,11 @@ class MessagesScreen extends StatefulWidget {
 class _MessagesScreenState extends State<MessagesScreen> {
   final ApiService _apiService = ApiService();
   final StorageService _storage = StorageService();
+  final DatabaseService _db = DatabaseService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   List<Message> _messages = [];
-  WebSocketChannel? _channel;
   bool _isLoading = true;
   int? _currentUserId;
   String? _currentUsername;
@@ -34,6 +34,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   _ConnectionStatus _connectionStatus = _ConnectionStatus.online;
   final Set<int> _pendingLocalIds = {};
   StreamSubscription<void>? _syncSub;
+  VoidCallback? _tabListener;
+  VoidCallback? _messagesVersionListener;
 
   int _currentPage = 1;
   bool _hasMoreMessages = true;
@@ -46,13 +48,27 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _syncSub = SyncService.instance.onSyncComplete.listen((_) {
       _loadMessages();
     });
+    _tabListener = _handleTabChange;
+    AppStateService.instance.currentTab.addListener(_tabListener!);
+    _messagesVersionListener = _handleMessagesVersionChange;
+    AppStateService.instance.messagesVersion
+        .addListener(_messagesVersionListener!);
     _initialize();
   }
 
   Future<void> _initialize() async {
     await _loadCurrentUser();
     await _loadMessages();
-    await _connectWebSocket();
+  }
+
+  void _handleTabChange() {
+    if (AppStateService.instance.currentTab.value == 4) {
+      _markAllVisibleAsRead();
+    }
+  }
+
+  void _handleMessagesVersionChange() {
+    _loadMessages();
   }
 
   Future<void> _loadCurrentUser() async {
@@ -67,14 +83,24 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Future<void> _loadMessages() async {
     try {
       final messages = await _apiService.getConversation(page: 1, perPage: 10);
+      final pendingIds = messages
+          .where((m) => m.status == 'pending' || m.id < 0)
+          .map((m) => m.id)
+          .toSet();
       setState(() {
         _messages = messages.reversed.toList();
-        _pendingLocalIds.clear();
+        _pendingLocalIds
+          ..clear()
+          ..addAll(pendingIds);
         _isLoading = false;
         _currentPage = 1;
         _hasMoreMessages = messages.length == 10;
         _connectionStatus = _ConnectionStatus.online;
       });
+      await _syncUnreadBadge();
+      if (AppStateService.instance.currentTab.value == 4) {
+        await _markAllVisibleAsRead();
+      }
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
@@ -83,12 +109,20 @@ class _MessagesScreenState extends State<MessagesScreen> {
       });
     } on OfflineException {
       final cached = await _apiService.getCachedMessages();
+      final pendingIds = cached
+          .where((m) => m.status == 'pending' || m.id < 0)
+          .map((m) => m.id)
+          .toSet();
       setState(() {
         _messages = cached;
+        _pendingLocalIds
+          ..clear()
+          ..addAll(pendingIds);
         _isLoading = false;
         _hasMoreMessages = false;
         _connectionStatus = _ConnectionStatus.offline;
       });
+      await _syncUnreadBadge();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
@@ -158,68 +192,54 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  Future<void> _connectWebSocket() async {
-    try {
-      final token = await _storage.getToken();
-      if (token != null) {
-        final configuredWs = await _apiService.getWebSocketUrl();
-        final uri = Uri.parse(configuredWs);
-        final wsUrl = uri.replace(
-          queryParameters: {
-            ...uri.queryParameters,
-            'token': token,
-          },
-        );
+  Future<void> _markAllVisibleAsRead() async {
+    if (_currentUserId == null) return;
 
-        try {
-          _channel = WebSocketChannel.connect(
-            wsUrl,
-          );
-
-          _channel!.stream.listen(
-            (data) {
-              try {
-                final wsData = jsonDecode(data);
-
-                if (wsData['type'] != 'message_sent' ||
-                    wsData['payload'] == null) {
-                  return;
-                }
-
-                final messageData = wsData['payload'];
-
-                if (messageData['content'] == null ||
-                    messageData['content'].toString().trim().isEmpty) {
-                  return;
-                }
-
-                final message = Message.fromJson(messageData);
-
-                if (mounted && message.senderId != _currentUserId) {
-                  setState(() {
-                    _messages.add(message);
-                  });
-                  _scrollToBottom();
-                }
-              } catch (e) {
-                // Silently handle parsing errors
-              }
-            },
-            onError: (error) {
-              // Silently handle WebSocket errors
-            },
-            onDone: () {
-              // Connection closed
-            },
-            cancelOnError: false,
-          );
-        } catch (wsError) {
-          // WebSocket connection failed, messages will load via HTTP
-        }
-      }
-    } catch (e) {
-      // General WebSocket error
+    final unreadIds = _messages
+        .where((m) => m.senderId != _currentUserId && m.status != 'read')
+        .map((m) => m.id)
+        .toList();
+    if (unreadIds.isEmpty) {
+      AppStateService.instance.resetUnreadMessages();
+      return;
     }
+
+    await _db.markIncomingMessagesAsRead(_currentUserId!);
+    if (mounted) {
+      setState(() {
+        _messages = _messages
+            .map(
+              (m) => m.senderId != _currentUserId && m.status != 'read'
+                  ? Message(
+                      id: m.id,
+                      senderId: m.senderId,
+                      receiverId: m.receiverId,
+                      sender: m.sender,
+                      receiver: m.receiver,
+                      content: m.content,
+                      status: 'read',
+                      createdAt: m.createdAt,
+                      updatedAt: DateTime.now(),
+                    )
+                  : m,
+            )
+            .toList();
+      });
+    }
+
+    for (final id in unreadIds) {
+      try {
+        await _apiService.markMessageRead(id);
+      } catch (_) {}
+    }
+
+    await _syncUnreadBadge();
+  }
+
+  Future<void> _syncUnreadBadge() async {
+    if (_currentUserId == null) return;
+    final unread = await _db.getUnreadMessagesCount(_currentUserId!);
+    AppStateService.instance.setUnreadMessages(unread);
   }
 
   void _scrollToBottom() {
@@ -247,8 +267,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _scrollToBottom();
       }
     } on OfflineException {
-      await SyncService.instance.enqueueMessageSend(content);
       final tempId = SyncService.tempId();
+      await SyncService.instance.enqueueMessageSend(content, tempId: tempId);
       final now = DateTime.now();
       final sender = _currentUserFull ??
           User(
@@ -269,6 +289,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         createdAt: now,
         updatedAt: now,
       );
+      await _db.insertMessage(tempMessage);
       if (mounted) {
         setState(() {
           _messages.add(tempMessage);
@@ -296,8 +317,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void dispose() {
     _syncSub?.cancel();
+    if (_tabListener != null) {
+      AppStateService.instance.currentTab.removeListener(_tabListener!);
+    }
+    if (_messagesVersionListener != null) {
+      AppStateService.instance.messagesVersion
+          .removeListener(_messagesVersionListener!);
+    }
     _scrollController.removeListener(_onScroll);
-    _channel?.sink.close();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -555,12 +582,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           color: msgTextColor.withValues(alpha: 0.6),
                         ),
                       ),
-                      if (isPending) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.schedule,
-                          size: 10,
-                          color: msgTextColor.withValues(alpha: 0.7),
+                      if (isMe) ...[
+                        const SizedBox(width: 5),
+                        _buildOutgoingStatusIcon(
+                          status: message.status,
+                          isPending: isPending,
+                          color: msgTextColor,
                         ),
                       ],
                     ],
@@ -590,6 +617,42 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildOutgoingStatusIcon({
+    required String status,
+    required bool isPending,
+    required Color color,
+  }) {
+    if (isPending || status == 'pending') {
+      return Icon(
+        Icons.schedule,
+        size: 12,
+        color: color.withValues(alpha: 0.8),
+      );
+    }
+
+    switch (status) {
+      case 'read':
+        return const Icon(
+          Icons.done_all,
+          size: 14,
+          color: Colors.white,
+        );
+      case 'delivered':
+        return const Icon(
+          Icons.done_all,
+          size: 14,
+          color: Color(0xFFEDEDED),
+        );
+      case 'sent':
+      default:
+        return Icon(
+          Icons.done,
+          size: 13,
+          color: color.withValues(alpha: 0.95),
+        );
+    }
   }
 
   String _formatTime(DateTime dateTime) {
