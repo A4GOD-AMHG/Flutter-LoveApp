@@ -25,7 +25,7 @@ class NotificationService with WidgetsBindingObserver {
     );
 
     await _plugin.initialize(
-      const InitializationSettings(
+      settings: const InitializationSettings(
         android: android,
         iOS: ios,
         linux: linux,
@@ -65,10 +65,10 @@ class NotificationService with WidgetsBindingObserver {
     const iosDetails = DarwinNotificationDetails();
 
     await _plugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      senderName,
-      content,
-      const NotificationDetails(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: senderName,
+      body: content,
+      notificationDetails: const NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       ),
