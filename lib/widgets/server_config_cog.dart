@@ -122,7 +122,9 @@ class ServerConfigCog extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final host = _normalizeUrl(hostController.text);
-                final ws = _normalizeUrl(wsController.text);
+                final wsInput = wsController.text.trim();
+                final derivedWs = _deriveWsFromHost(host);
+                final ws = wsInput.isEmpty ? derivedWs : _normalizeUrl(wsInput);
 
                 final hostUri = Uri.tryParse(host);
                 final wsUri = Uri.tryParse(ws);
@@ -137,7 +139,9 @@ class ServerConfigCog extends StatelessWidget {
                 if (!validHost) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(
-                      content: Text('Host inválido. Usa http:// o https://'),
+                      content: Text('Host inválido. Usa http:// o https://',
+                          style: TextStyle(color: Colors.white)),
+                      backgroundColor: Colors.red,
                     ),
                   );
                   return;
@@ -146,7 +150,9 @@ class ServerConfigCog extends StatelessWidget {
                 if (!validWs) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     const SnackBar(
-                      content: Text('WebSocket inválido. Usa ws:// o wss://'),
+                      content: Text('WebSocket inválido. Usa ws:// o wss://',
+                          style: TextStyle(color: Colors.white)),
+                      backgroundColor: Colors.red,
                     ),
                   );
                   return;
@@ -177,7 +183,10 @@ class ServerConfigCog extends StatelessWidget {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Servidor actualizado correctamente'),
+        content: Text(
+          'Servidor actualizado correctamente',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: Colors.green,
       ),
     );
@@ -191,5 +200,23 @@ class ServerConfigCog extends StatelessWidget {
       return trimmed.substring(0, trimmed.length - 1);
     }
     return trimmed;
+  }
+
+  String _deriveWsFromHost(String host) {
+    final uri = Uri.tryParse(host);
+    if (uri == null || uri.host.isEmpty) {
+      return StorageService.defaultWsUrl;
+    }
+
+    var scheme = uri.scheme.toLowerCase();
+    if (scheme == 'http') {
+      scheme = 'ws';
+    } else if (scheme == 'https') {
+      scheme = 'wss';
+    } else if (scheme != 'ws' && scheme != 'wss') {
+      scheme = 'wss';
+    }
+
+    return uri.replace(scheme: scheme).toString();
   }
 }

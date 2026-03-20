@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:love_app/screens/messages_screen.dart';
 import 'package:love_app/screens/journey_screen.dart';
 import 'package:love_app/screens/alarms_screen.dart';
@@ -6,6 +7,7 @@ import 'package:love_app/screens/home_screen.dart';
 import 'package:love_app/screens/settings_screen.dart';
 import 'package:love_app/services/app_state_service.dart';
 import 'package:love_app/services/chat_realtime_service.dart';
+import 'package:love_app/services/sync_service.dart';
 import 'package:love_app/widgets/background.dart';
 import 'package:flutter/material.dart';
 
@@ -33,7 +35,8 @@ class _LayoutWidgetState extends State<LayoutWidget> {
       SettingsScreen(),
     ];
     AppStateService.instance.setCurrentTab(_index);
-    ChatRealtimeService.instance.connect();
+    unawaited(ChatRealtimeService.instance.connect().catchError((_) {}));
+    unawaited(SyncService.instance.syncOnAppLaunch().catchError((_) {}));
   }
 
   @override

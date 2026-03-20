@@ -3,6 +3,7 @@ import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/database_service.dart';
 import '../services/app_state_service.dart';
+import '../services/chat_realtime_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
@@ -11,6 +12,7 @@ import '../models/message.dart';
 import '../models/user.dart';
 
 enum _ConnectionStatus { online, offline }
+enum _AuthBannerState { hidden, reconnecting, online, sessionExpired }
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -32,10 +34,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
   String? _currentUsername;
   User? _currentUserFull;
   _ConnectionStatus _connectionStatus = _ConnectionStatus.online;
+  _AuthBannerState _authBannerState = _AuthBannerState.hidden;
   final Set<int> _pendingLocalIds = {};
   StreamSubscription<void>? _syncSub;
+  StreamSubscription<ChatRealtimeEvent>? _realtimeSub;
   VoidCallback? _tabListener;
-  VoidCallback? _messagesVersionListener;
+  VoidCallback? _localDataResetListener;
+  Timer? _bannerTimer;
 
   int _currentPage = 1;
   bool _hasMoreMessages = true;
@@ -48,11 +53,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _syncSub = SyncService.instance.onSyncComplete.listen((_) {
       _loadMessages();
     });
+    _realtimeSub = ChatRealtimeService.instance.events.listen(
+      _applyRealtimeEvent,
+    );
     _tabListener = _handleTabChange;
     AppStateService.instance.currentTab.addListener(_tabListener!);
-    _messagesVersionListener = _handleMessagesVersionChange;
-    AppStateService.instance.messagesVersion
-        .addListener(_messagesVersionListener!);
+    _localDataResetListener = _handleLocalDataReset;
+    AppStateService.instance.localDataResetVersion
+        .addListener(_localDataResetListener!);
     _initialize();
   }
 
@@ -67,8 +75,64 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  void _handleMessagesVersionChange() {
-    _loadMessages();
+  void _handleLocalDataReset() {
+    if (!mounted) return;
+    setState(() {
+      _messages = [];
+      _pendingLocalIds.clear();
+      _isLoading = false;
+      _isLoadingMore = false;
+      _hasMoreMessages = false;
+      _currentPage = 1;
+      _authBannerState = _AuthBannerState.hidden;
+    });
+  }
+
+  void _applyRealtimeEvent(ChatRealtimeEvent event) {
+    if (!mounted) return;
+
+    switch (event.type) {
+      case 'message_sent':
+        final incoming = event.message;
+        if (incoming == null) return;
+        final existingIndex = _messages.indexWhere((m) => m.id == incoming.id);
+        setState(() {
+          if (existingIndex >= 0) {
+            _messages[existingIndex] = incoming;
+          } else {
+            _messages.add(incoming);
+          }
+        });
+        if (incoming.senderId != _currentUserId &&
+            AppStateService.instance.currentTab.value == 4) {
+          _scrollToBottom();
+        }
+      case 'message_deleted':
+        final id = event.messageId;
+        if (id == null) return;
+        setState(() => _messages.removeWhere((m) => m.id == id));
+      case 'message_updated':
+      case 'message_status':
+        final id = event.messageId;
+        final status = event.status;
+        if (id == null || status == null) return;
+        final idx = _messages.indexWhere((m) => m.id == id);
+        if (idx < 0) return;
+        final old = _messages[idx];
+        setState(() {
+          _messages[idx] = Message(
+            id: old.id,
+            senderId: old.senderId,
+            receiverId: old.receiverId,
+            sender: old.sender,
+            receiver: old.receiver,
+            content: old.content,
+            status: status,
+            createdAt: old.createdAt,
+            updatedAt: event.updatedAt ?? DateTime.now(),
+          );
+        });
+    }
   }
 
   Future<void> _loadCurrentUser() async {
@@ -81,6 +145,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _loadMessages() async {
+    final shouldShowOnline = _connectionStatus == _ConnectionStatus.offline ||
+        _authBannerState == _AuthBannerState.reconnecting ||
+        _authBannerState == _AuthBannerState.sessionExpired;
     try {
       final messages = await _apiService.getConversation(page: 1, perPage: 10);
       final pendingIds = messages
@@ -97,6 +164,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _hasMoreMessages = messages.length == 10;
         _connectionStatus = _ConnectionStatus.online;
       });
+      if (shouldShowOnline) {
+        _showOnlineBanner();
+      }
+      AppStateService.instance.setOnline(true);
       await _syncUnreadBadge();
       if (AppStateService.instance.currentTab.value == 4) {
         await _markAllVisibleAsRead();
@@ -107,6 +178,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
           _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
         }
       });
+    } on AuthException {
+      await _handleAuth401Messages();
     } on OfflineException {
       final cached = await _apiService.getCachedMessages();
       final pendingIds = cached
@@ -121,7 +194,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _isLoading = false;
         _hasMoreMessages = false;
         _connectionStatus = _ConnectionStatus.offline;
+        _authBannerState = _AuthBannerState.hidden;
       });
+      AppStateService.instance.setOnline(false);
       await _syncUnreadBadge();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
@@ -134,10 +209,121 @@ class _MessagesScreenState extends State<MessagesScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar mensajes: $e')),
+          SnackBar(
+            content: Text('Error al cargar mensajes: $e', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
+  }
+
+  Future<void> _handleAuth401Messages() async {
+    if (mounted) {
+      setState(() {
+        _authBannerState = _AuthBannerState.reconnecting;
+      });
+    }
+
+    try {
+      final messages = await _apiService.getConversation(page: 1, perPage: 10);
+      final pendingIds = messages
+          .where((m) => m.status == 'pending' || m.id < 0)
+          .map((m) => m.id)
+          .toSet();
+      if (mounted) {
+        setState(() {
+          _messages = messages.reversed.toList();
+          _pendingLocalIds
+            ..clear()
+            ..addAll(pendingIds);
+          _isLoading = false;
+          _currentPage = 1;
+          _hasMoreMessages = messages.length == 10;
+          _connectionStatus = _ConnectionStatus.online;
+        });
+        _showOnlineBanner();
+        AppStateService.instance.setOnline(true);
+      }
+      await _syncUnreadBadge();
+      return;
+    } on AuthException {
+      final cached = await _apiService.getCachedMessages();
+      final pendingIds = cached
+          .where((m) => m.status == 'pending' || m.id < 0)
+          .map((m) => m.id)
+          .toSet();
+      if (mounted) {
+        setState(() {
+          _messages = cached;
+          _pendingLocalIds
+            ..clear()
+            ..addAll(pendingIds);
+          _isLoading = false;
+          _hasMoreMessages = false;
+          _connectionStatus = _ConnectionStatus.online;
+          _authBannerState = _AuthBannerState.sessionExpired;
+        });
+        AppStateService.instance.setOnline(true);
+      }
+      await _syncUnreadBadge();
+      return;
+    } on OfflineException {
+      final cached = await _apiService.getCachedMessages();
+      final pendingIds = cached
+          .where((m) => m.status == 'pending' || m.id < 0)
+          .map((m) => m.id)
+          .toSet();
+      if (mounted) {
+        setState(() {
+          _messages = cached;
+          _pendingLocalIds
+            ..clear()
+            ..addAll(pendingIds);
+          _isLoading = false;
+          _hasMoreMessages = false;
+          _connectionStatus = _ConnectionStatus.offline;
+          _authBannerState = _AuthBannerState.hidden;
+        });
+        AppStateService.instance.setOnline(false);
+      }
+      await _syncUnreadBadge();
+      return;
+    } catch (_) {
+      final cached = await _apiService.getCachedMessages();
+      final pendingIds = cached
+          .where((m) => m.status == 'pending' || m.id < 0)
+          .map((m) => m.id)
+          .toSet();
+      if (mounted) {
+        setState(() {
+          _messages = cached;
+          _pendingLocalIds
+            ..clear()
+            ..addAll(pendingIds);
+          _isLoading = false;
+          _hasMoreMessages = false;
+          _authBannerState = _AuthBannerState.sessionExpired;
+        });
+        AppStateService.instance.setOnline(false);
+      }
+      await _syncUnreadBadge();
+      return;
+    }
+  }
+
+  void _showOnlineBanner() {
+    if (!mounted) return;
+    _bannerTimer?.cancel();
+    setState(() {
+      _authBannerState = _AuthBannerState.online;
+    });
+    _bannerTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() {
+        _authBannerState = _AuthBannerState.hidden;
+      });
+    });
   }
 
   void _onScroll() {
@@ -162,31 +348,43 @@ class _MessagesScreenState extends State<MessagesScreen> {
       );
 
       if (mounted) {
+        final prevExtent = _scrollController.hasClients
+            ? _scrollController.position.maxScrollExtent
+            : 0.0;
         setState(() {
           _currentPage++;
           _hasMoreMessages = messages.length == 10;
           _messages.insertAll(0, messages.reversed);
         });
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients) {
-            final newOffset = _scrollController.position.maxScrollExtent -
-                (_scrollController.position.maxScrollExtent - scrollOffset);
-            _scrollController.jumpTo(newOffset + (messages.length * 80.0));
-          }
-        });
-
-        await Future.delayed(const Duration(milliseconds: 300));
-
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_scrollController.hasClients) {
+          final newExtent = _scrollController.position.maxScrollExtent;
+          final delta = newExtent - prevExtent;
+          final target = scrollOffset + delta;
+          _scrollController.jumpTo(target.clamp(
+            _scrollController.position.minScrollExtent,
+            _scrollController.position.maxScrollExtent,
+          ));
+        }
         if (mounted) {
           setState(() => _isLoadingMore = false);
         }
       }
     } catch (e) {
+      if (e is AuthException) {
+        await _handleAuth401Messages();
+        if (mounted) {
+          setState(() => _isLoadingMore = false);
+        }
+        return;
+      }
       if (mounted) {
         setState(() => _isLoadingMore = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar más mensajes: $e')),
+          SnackBar(
+            content: Text('Error al cargar más mensajes: $e', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -237,9 +435,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _syncUnreadBadge() async {
-    if (_currentUserId == null) return;
-    final unread = await _db.getUnreadMessagesCount(_currentUserId!);
-    AppStateService.instance.setUnreadMessages(unread);
+    try {
+      final unread = await _apiService.getUnreadCount();
+      AppStateService.instance.setUnreadMessages(unread);
+    } catch (_) {
+      if (_currentUserId == null) return;
+      final unread = await _db.getUnreadMessagesCount(_currentUserId!);
+      AppStateService.instance.setUnreadMessages(unread);
+    }
   }
 
   void _scrollToBottom() {
@@ -263,7 +466,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
     try {
       final message = await _apiService.sendMessage(content);
       if (mounted) {
-        setState(() => _messages.add(message));
+        setState(() {
+          final existingIndex = _messages.indexWhere((m) => m.id == message.id);
+          if (existingIndex >= 0) {
+            _messages[existingIndex] = message;
+          } else {
+            _messages.add(message);
+          }
+        });
         _scrollToBottom();
       }
     } on OfflineException {
@@ -297,18 +507,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
           _connectionStatus = _ConnectionStatus.offline;
         });
         _scrollToBottom();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('Mensaje guardado. Se enviará cuando tengas conexión.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al enviar mensaje: $e')),
+          SnackBar(
+            content: Text('Error al enviar mensaje: $e', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -317,12 +523,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void dispose() {
     _syncSub?.cancel();
+    _realtimeSub?.cancel();
+    _bannerTimer?.cancel();
     if (_tabListener != null) {
       AppStateService.instance.currentTab.removeListener(_tabListener!);
     }
-    if (_messagesVersionListener != null) {
-      AppStateService.instance.messagesVersion
-          .removeListener(_messagesVersionListener!);
+    if (_localDataResetListener != null) {
+      AppStateService.instance.localDataResetVersion
+          .removeListener(_localDataResetListener!);
     }
     _scrollController.removeListener(_onScroll);
     _messageController.dispose();
@@ -340,22 +548,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return Column(
       children: [
         const Header(),
-        if (_connectionStatus == _ConnectionStatus.offline)
-          Container(
-            width: double.infinity,
-            color: Colors.grey[700],
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-            child: const Row(
-              children: [
-                Icon(Icons.wifi_off, color: Colors.white, size: 16),
-                SizedBox(width: 8),
-                Text(
-                  'Sin conexión — mostrando mensajes guardados',
-                  style: TextStyle(color: Colors.white, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
+        _buildAuthBanner(),
         Expanded(
           child: _isLoading
               ? Center(
@@ -417,12 +610,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           children: [
                             if (showDateSeparator)
                               _buildDateSeparator(message.createdAt, textColor),
-                            _buildMessageBubble(
-                              message,
-                              isMe,
-                              textColor,
-                              cardColor,
-                            ),
+                          _buildMessageBubble(
+                            context,
+                            message,
+                            isMe,
+                            textColor,
+                            cardColor,
+                          ),
                           ],
                         );
                       },
@@ -489,16 +683,41 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
+  Widget _buildAuthBanner() {
+    if (_authBannerState == _AuthBannerState.hidden) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      color: Colors.red[700],
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+      child: const Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Sesión expirada. Cierra sesión y vuelve a iniciar.',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(
+    BuildContext context,
     Message message,
     bool isMe,
     Color textColor,
     Color cardColor,
   ) {
     final isPending = _pendingLocalIds.contains(message.id);
-    final bgColor = isMe
-        ? (isPending ? Colors.orange[700]! : const Color(0xFF9B59B6))
-        : cardColor;
+    final sentColor = const Color(0xFF9B59B6);
+    final pendingColor = const Color(0xFF7C4DFF);
+    final bgColor = isMe ? (isPending ? pendingColor : sentColor) : cardColor;
     final msgTextColor = isMe ? Colors.white : textColor;
 
     final displayUsername = isMe ? _currentUsername : message.sender.username;
@@ -509,6 +728,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         : const Color(0xFFFFD700);
     final time = _formatTime(message.createdAt);
 
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.65;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -535,64 +755,89 @@ class _MessagesScreenState extends State<MessagesScreen> {
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
-              decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isMe ? 16 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isMe)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        message.sender.name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: msgTextColor.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ),
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: msgTextColor,
-                    ),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isMe ? 16 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 16),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        time,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: msgTextColor.withValues(alpha: 0.6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!isMe)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          message.sender.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: msgTextColor.withValues(alpha: 0.8),
+                          ),
                         ),
                       ),
-                      if (isMe) ...[
-                        const SizedBox(width: 5),
-                        _buildOutgoingStatusIcon(
-                          status: message.status,
-                          isPending: isPending,
-                          color: msgTextColor,
+                    Text(
+                      message.content,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: msgTextColor,
+                      ),
+                    ),
+                    if (isPending)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.schedule,
+                              size: 12,
+                              color: Colors.purple[100],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Enviando...',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.purple[100],
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            time,
+                            textAlign: TextAlign.left,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: msgTextColor.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                        if (isMe)
+                          _buildOutgoingStatusIcon(
+                            status: message.status,
+                            isPending: isPending,
+                            color: msgTextColor,
+                          ),
                       ],
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -628,7 +873,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       return Icon(
         Icons.schedule,
         size: 12,
-        color: color.withValues(alpha: 0.8),
+        color: Colors.purpleAccent.shade100,
       );
     }
 

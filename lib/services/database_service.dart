@@ -332,6 +332,19 @@ class DatabaseService {
         as Map<String, dynamic>;
   }
 
+  Future<String?> getCachedPassword(String username) async {
+    final db = await database;
+    final rows = await db.query(
+      'auth_cache',
+      columns: ['password'],
+      where: 'username = ?',
+      whereArgs: [username.trim().toLowerCase()],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['password'] as String?;
+  }
+
   Future<void> updateCachedPassword(String username, String newPassword) async {
     final db = await database;
     await db.update(
@@ -343,5 +356,14 @@ class DatabaseService {
       where: 'username = ?',
       whereArgs: [username.trim().toLowerCase()],
     );
+  }
+
+  Future<void> clearAllLocalData() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('todos');
+      await txn.delete('messages');
+      await txn.delete('pending_operations');
+    });
   }
 }

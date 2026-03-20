@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'services/storage_service.dart';
 import 'services/sync_service.dart';
 import 'services/notification_service.dart';
+import 'services/push_token_service.dart';
 import 'utils/theme_controller.dart';
 import 'widgets/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -17,6 +18,7 @@ Future<void> main() async {
 
   _initializeDatabaseFactory();
   await NotificationService.instance.initialize();
+  await PushTokenService.instance.initialize();
 
   GoogleFonts.config.allowRuntimeFetching = false;
 
@@ -62,6 +64,10 @@ class _MyRootState extends State<MyRoot> {
       useMaterial3: true,
     ).copyWith(
       scaffoldBackgroundColor: const Color(0xFFF7F5FF),
+      snackBarTheme: const SnackBarThemeData(
+        contentTextStyle: TextStyle(color: Colors.white),
+        actionTextColor: Colors.white,
+      ),
     );
 
     _darkTheme = ThemeData(
@@ -72,11 +78,16 @@ class _MyRootState extends State<MyRoot> {
       useMaterial3: true,
     ).copyWith(
       scaffoldBackgroundColor: const Color(0xFF1C1E2A),
+      snackBarTheme: const SnackBarThemeData(
+        contentTextStyle: TextStyle(color: Colors.white),
+        actionTextColor: Colors.white,
+      ),
     );
   }
 
   Future<void> _initializeApp() async {
     final isDark = await _storage.getThemeMode();
+    final isLoggedIn = await _storage.isLoggedIn();
 
     setState(() {
       if (isDark != null) {
@@ -84,6 +95,10 @@ class _MyRootState extends State<MyRoot> {
       }
       _isLoading = false;
     });
+
+    if (isLoggedIn) {
+      await PushTokenService.instance.syncTokenWithBackend();
+    }
   }
 
   @override

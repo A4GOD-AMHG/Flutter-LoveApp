@@ -2,6 +2,9 @@ import '../services/storage_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/database_service.dart';
+import '../services/push_token_service.dart';
+import '../services/app_state_service.dart';
 import '../widgets/header.dart';
 import '../widgets/server_config_cog.dart';
 
@@ -15,6 +18,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final ApiService _apiService = ApiService();
   final StorageService _storage = StorageService();
+  final DatabaseService _db = DatabaseService();
   String? _username;
   bool _isUserLoaded = false;
 
@@ -100,7 +104,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () {
                 if (newPasswordController.text.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Ingresa una contraseña')),
+                    const SnackBar(
+                      content: Text('Ingresa una contraseña',
+                          style: TextStyle(color: Colors.white)),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                   return;
                 }
@@ -108,7 +116,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     confirmPasswordController.text) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('Las contraseñas no coinciden')),
+                      content: Text('Las contraseñas no coinciden',
+                          style: TextStyle(color: Colors.white)),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                   return;
                 }
@@ -135,10 +146,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                changedOnline
-                    ? '¡Contraseña actualizada con éxito! ✨'
-                    : 'Contraseña actualizada localmente. Se sincronizará al volver la conexión.',
-              ),
+                  changedOnline
+                      ? '¡Contraseña actualizada con éxito! ✨'
+                      : 'Contraseña actualizada localmente. Se sincronizará al volver la conexión.',
+                  style: TextStyle(color: Colors.white)),
               backgroundColor: changedOnline ? Colors.green : Colors.orange,
             ),
           );
@@ -147,7 +158,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al cambiar contraseña: $e'),
+              content: Text('Error al cambiar contraseña: $e',
+                  style: TextStyle(color: Colors.white)),
               backgroundColor: Colors.red,
             ),
           );
@@ -192,6 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (confirm == true) {
       try {
+        await PushTokenService.instance.unregisterTokenFromBackend();
         await _apiService.logout();
         if (mounted) {
           Navigator.of(context).pushNamedAndRemoveUntil(
@@ -202,9 +215,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al cerrar sesión: $e')),
+            SnackBar(
+              content: Text('Error al cerrar sesión: $e',
+                  style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red,
+            ),
           );
         }
+      }
+    }
+  }
+
+  Future<void> _clearLocalData() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final themeController = ThemeProvider.of(context);
+        final isDark = themeController.isDark;
+        final textColor = isDark ? Colors.white : Colors.black;
+        final cardColor = isDark ? const Color(0xFF2d2640) : Colors.white;
+
+        return AlertDialog(
+          backgroundColor: cardColor,
+          title:
+              Text('Vaciar datos locales', style: TextStyle(color: textColor)),
+          content: Text(
+            'Esto borrará mensajes, tareas, caché y cola local sin cerrar sesión. ¿Continuar?',
+            style: TextStyle(color: textColor),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancelar', style: TextStyle(color: textColor)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text(
+                'Vaciar',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _db.clearAllLocalData();
+      AppStateService.instance.notifyLocalDataCleared();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Datos locales eliminados'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error vaciando datos locales: $e',
+                style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -216,108 +294,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final textColor = isDark ? Colors.white : Colors.black87;
     final cardColor = isDark ? const Color(0xFF2d2640) : Colors.white;
 
-    return Column(
+    return Stack(
       children: [
-        const Header(),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 8, right: 12),
-            child: ServerConfigCog(
-              iconColor: textColor.withValues(alpha: 0.7),
-              onSaved: () => setState(() {}),
-            ),
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (_isUserLoaded)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0),
-                      child: Container(
-                        width: 110,
-                        height: 110,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _username == 'anyel'
-                              ? const Color(0xFF90EE90).withValues(alpha: 0.3)
-                              : const Color(0xFFFFD700).withValues(alpha: 0.3),
-                          border: Border.all(
-                            color: _username == 'anyel'
-                                ? const Color(0xFF90EE90)
-                                : const Color(0xFFFFD700),
-                            width: 2,
-                          ),
-                        ),
-                        child: ClipOval(
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Image.asset(
-                              _username == 'anyel'
-                                  ? 'assets/frog.png'
-                                  : 'assets/duck.png',
-                              fit: BoxFit.contain,
+        Column(
+          children: [
+            const Header(),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (_isUserLoaded)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16.0),
+                          child: Container(
+                            width: 110,
+                            height: 110,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _username == 'anyel'
+                                  ? const Color(0xFF90EE90)
+                                      .withValues(alpha: 0.3)
+                                  : const Color(0xFFFFD700)
+                                      .withValues(alpha: 0.3),
+                              border: Border.all(
+                                color: _username == 'anyel'
+                                    ? const Color(0xFF90EE90)
+                                    : const Color(0xFFFFD700),
+                                width: 2,
+                              ),
+                            ),
+                            child: ClipOval(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Image.asset(
+                                  _username == 'anyel'
+                                      ? 'assets/frog.png'
+                                      : 'assets/duck.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
                             ),
                           ),
                         ),
+                      ],
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.only(top: 16.0),
+                      child: SizedBox(
+                        width: 110,
+                        height: 110,
+                        child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
                     ),
-                  ],
-                )
-              else
-                const Padding(
-                  padding: EdgeInsets.only(top: 16.0),
-                  child: SizedBox(
-                    width: 110,
-                    height: 110,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Cuenta',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textColor,
                     ),
                   ),
-                ),
-              const SizedBox(height: 24),
-              Text(
-                'Cuenta',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: textColor,
-                ),
+                  const SizedBox(height: 12),
+                  _buildSettingTile(
+                    icon: Icons.lock_outline,
+                    title: 'Cambiar Contraseña',
+                    subtitle: 'Actualiza tu contraseña de acceso',
+                    onTap: _changePassword,
+                    textColor: textColor,
+                    cardColor: cardColor,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Sesión',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSettingTile(
+                    icon: Icons.logout,
+                    title: 'Cerrar Sesión',
+                    subtitle: 'Sal de tu cuenta',
+                    onTap: _logout,
+                    textColor: textColor,
+                    cardColor: cardColor,
+                    iconColor: Colors.red,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSettingTile(
+                    icon: Icons.delete_forever_outlined,
+                    title: 'Vaciar Datos Locales',
+                    subtitle: 'Borra datos y locales en este dispositivo',
+                    onTap: _clearLocalData,
+                    textColor: textColor,
+                    cardColor: cardColor,
+                    iconColor: Colors.deepOrange,
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _buildSettingTile(
-                icon: Icons.lock_outline,
-                title: 'Cambiar Contraseña',
-                subtitle: 'Actualiza tu contraseña de acceso',
-                onTap: _changePassword,
-                textColor: textColor,
-                cardColor: cardColor,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Sesión',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: textColor,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildSettingTile(
-                icon: Icons.logout,
-                title: 'Cerrar Sesión',
-                subtitle: 'Sal de tu cuenta',
-                onTap: _logout,
-                textColor: textColor,
-                cardColor: cardColor,
-                iconColor: Colors.red,
-              ),
-            ],
+            ),
+          ],
+        ),
+        Positioned(
+          top: 72,
+          right: 12,
+          child: ServerConfigCog(
+            iconColor: textColor.withValues(alpha: 0.7),
+            onSaved: () => setState(() {}),
           ),
         ),
       ],

@@ -1,3 +1,5 @@
+import 'package:love_app/services/app_state_service.dart';
+import 'package:love_app/services/storage_service.dart';
 import 'package:love_app/utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 
@@ -8,7 +10,7 @@ class Header extends StatefulWidget {
   State<Header> createState() => _HeaderState();
 }
 
-class _HeaderState extends State<Header> {
+class _HeaderState extends State<Header> with SingleTickerProviderStateMixin {
   void _showDedicationDialog(BuildContext context) {
     final themeController = ThemeProvider.of(context);
     final isDark = themeController.isDark;
@@ -94,6 +96,51 @@ class _HeaderState extends State<Header> {
     );
   }
 
+  final StorageService _storage = StorageService();
+  String _username = 'anyel';
+  bool _isOnline = true;
+  VoidCallback? _onlineListener;
+  late final AnimationController _glowController;
+  late final Animation<double> _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+    _onlineListener = () {
+      if (!mounted) return;
+      setState(() {
+        _isOnline = AppStateService.instance.isOnline.value;
+      });
+    };
+    AppStateService.instance.isOnline.addListener(_onlineListener!);
+    _isOnline = AppStateService.instance.isOnline.value;
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+    _glowAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    if (_onlineListener != null) {
+      AppStateService.instance.isOnline.removeListener(_onlineListener!);
+    }
+    _glowController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadUser() async {
+    final user = await _storage.getUser();
+    if (!mounted) return;
+    setState(() {
+      _username = (user?.username ?? 'anyel').toLowerCase();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -110,42 +157,45 @@ class _HeaderState extends State<Header> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 15),
+        padding: const EdgeInsets.fromLTRB(10, 20, 20, 15),
         child: SizedBox(
           height: 32,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Text(
-                  'Anyel x Alexis',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.deepPurple,
-                    decoration: TextDecoration.none,
+              Row(
+                children: [
+                  _buildUserAvatar(),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Anyel x Alexis',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.deepPurple,
+                      decoration: TextDecoration.none,
+                    ),
                   ),
-                ),
+                ],
               ),
               Row(
                 children: [
                   Switch(
                     value: isDark,
                     onChanged: (_) => ThemeProvider.of(context).toggle(),
-                    activeThumbColor: Color(0xFF000000),
+                    activeThumbColor: const Color(0xFF000000),
                     activeTrackColor: const Color(0xFF7E7A83),
                     inactiveThumbColor: Colors.amber.shade700,
                     inactiveTrackColor: Colors.amber.shade100,
                     thumbIcon: WidgetStateProperty.resolveWith<Icon?>((states) {
                       if (states.contains(WidgetState.selected)) {
-                        return Icon(
+                        return const Icon(
                           Icons.nightlight_round,
                           color: Colors.white,
                           size: 16,
                         );
                       } else {
-                        return Icon(
+                        return const Icon(
                           Icons.wb_sunny_rounded,
                           color: Colors.white,
                           size: 16,
@@ -180,6 +230,51 @@ class _HeaderState extends State<Header> {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar() {
+    final isAnyel = _username == 'anyel';
+    final onlineColor =
+        isAnyel ? const Color(0xFF90EE90) : const Color(0xFFFFD700);
+    final avatarAsset = isAnyel ? 'assets/frog.png' : 'assets/duck.png';
+
+    return AnimatedBuilder(
+      animation: _glowAnimation,
+      builder: (context, child) {
+        final scale = _isOnline ? _glowAnimation.value : 1.0;
+        final borderColor = _isOnline ? onlineColor : Colors.grey;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: borderColor, width: 3),
+              boxShadow: _isOnline
+                  ? [
+                      BoxShadow(
+                        color: onlineColor.withValues(alpha: 0.4),
+                        blurRadius: 18,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : [],
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: ClipOval(
+          child: Image.asset(
+            avatarAsset,
+            fit: BoxFit.cover,
           ),
         ),
       ),

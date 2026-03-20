@@ -8,6 +8,7 @@ class StorageService {
   static const String _themeKey = 'theme_mode';
   static const String _hostKey = 'server_host';
   static const String _wsKey = 'server_ws';
+  static const String _pushTokenKey = 'push_token';
 
   static const String defaultHost = 'https://loveapp.duckdns.org/';
   static const String defaultWsUrl = 'wss://loveapp.duckdns.org/ws';
@@ -67,10 +68,26 @@ class StorageService {
     return prefs.getString(_wsKey) ?? defaultWsUrl;
   }
 
+  Future<void> savePushToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pushTokenKey, token);
+  }
+
+  Future<String?> getPushToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_pushTokenKey);
+  }
+
+  Future<void> clearPushToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pushTokenKey);
+  }
+
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);
+    await prefs.remove(_pushTokenKey);
   }
 
   Future<bool> isLoggedIn() async {
