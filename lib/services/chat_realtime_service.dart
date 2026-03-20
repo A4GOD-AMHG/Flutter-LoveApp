@@ -8,6 +8,22 @@ import 'database_service.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 
+class ChatRealtimeEvent {
+  final String type;
+  final Message? message;
+  final int? messageId;
+  final String? status;
+  final DateTime? updatedAt;
+
+  ChatRealtimeEvent({
+    required this.type,
+    this.message,
+    this.messageId,
+    this.status,
+    this.updatedAt,
+  });
+}
+
 class ChatRealtimeService {
   ChatRealtimeService._();
 
@@ -16,12 +32,15 @@ class ChatRealtimeService {
   final ApiService _api = ApiService();
   final StorageService _storage = StorageService();
   final DatabaseService _db = DatabaseService();
+  final StreamController<ChatRealtimeEvent> _events =
+      StreamController<ChatRealtimeEvent>.broadcast();
 
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   int? _currentUserId;
 
   bool get isConnected => _subscription != null;
+  Stream<ChatRealtimeEvent> get events => _events.stream;
 
   Future<void> connect() async {
     if (_subscription != null) return;
@@ -34,12 +53,17 @@ class ChatRealtimeService {
 
     try {
       final configuredWs = await _api.getWebSocketUrl();
-      final uri = Uri.parse(configuredWs);
+      final uri = _normalizeWsUri(configuredWs);
+      if (uri == null) {
+        _cleanupConnection();
+        return;
+      }
       final wsUrl = uri.replace(
         queryParameters: {
           ...uri.queryParameters,
           'token': token,
         },
+        fragment: '',
       );
 
       _channel = WebSocketChannel.connect(wsUrl);
@@ -54,9 +78,30 @@ class ChatRealtimeService {
         onDone: _cleanupConnection,
         cancelOnError: false,
       );
+      await _refreshUnreadFromBackend();
     } catch (_) {
       _cleanupConnection();
     }
+  }
+
+  Uri? _normalizeWsUri(String raw) {
+    final parsed = Uri.tryParse(raw.trim());
+    if (parsed == null || parsed.host.isEmpty) return null;
+
+    final host = parsed.host.toLowerCase();
+    if (host == 'localhost' || host == '127.0.0.1' || host == '::1') {
+      return Uri.parse(StorageService.defaultWsUrl);
+    }
+
+    var scheme = parsed.scheme.toLowerCase();
+    if (scheme == 'http') {
+      scheme = 'ws';
+    } else if (scheme == 'https') {
+      scheme = 'wss';
+    }
+
+    if (scheme != 'ws' && scheme != 'wss') return null;
+    return parsed.replace(scheme: scheme, fragment: '');
   }
 
   Future<void> disconnect() async {
@@ -104,6 +149,7 @@ class ChatRealtimeService {
 
     final message = Message.fromJson(payload);
     await _db.insertMessage(message);
+    _events.add(ChatRealtimeEvent(type: 'message_sent', message: message));
 
     if (message.senderId == _currentUserId) {
       return;
@@ -118,7 +164,7 @@ class ChatRealtimeService {
       return;
     }
 
-    await _syncUnreadBadge();
+    await _refreshUnreadFromBackend();
     await NotificationService.instance.showIncomingMessageNotification(
       senderName: message.sender.name,
       content: message.content,
@@ -134,28 +180,39 @@ class ChatRealtimeService {
     if (idx < 0) return;
 
     final old = all[idx];
+    final newStatus = payload['status'] as String? ?? old.status;
+    final newUpdatedAt = payload['updated_at'] != null
+        ? DateTime.parse(payload['updated_at'] as String).toLocal()
+        : DateTime.now();
     final updated = Message(
       id: old.id,
       senderId: old.senderId,
       receiverId: old.receiverId,
       sender: old.sender,
       receiver: old.receiver,
-      content: payload['content'] as String? ?? old.content,
-      status: payload['status'] as String? ?? old.status,
+      content: old.content,
+      status: newStatus,
       createdAt: old.createdAt,
-      updatedAt: payload['updated_at'] != null
-          ? DateTime.parse(payload['updated_at'] as String).toLocal()
-          : DateTime.now(),
+      updatedAt: newUpdatedAt,
     );
 
     await _db.insertMessage(updated);
+    _events.add(
+      ChatRealtimeEvent(
+        type: 'message_updated',
+        messageId: id,
+        status: newStatus,
+        updatedAt: newUpdatedAt,
+      ),
+    );
   }
 
   Future<void> _onMessageDeletedEvent(Map<String, dynamic> payload) async {
     final id = _parseMessageId(payload);
     if (id == null) return;
     await _db.deleteMessageById(id);
-    await _syncUnreadBadge();
+    _events.add(ChatRealtimeEvent(type: 'message_deleted', messageId: id));
+    await _refreshUnreadFromBackend();
   }
 
   Future<void> _onMessageStatusEvent(
@@ -163,8 +220,19 @@ class ChatRealtimeService {
     final id = _parseMessageId(payload);
     if (id == null) return;
     final status = payload['status'] as String? ?? fallbackStatus;
+    final updatedAt = payload['updated_at'] != null
+        ? DateTime.parse(payload['updated_at'] as String).toLocal()
+        : DateTime.now();
     await _db.updateMessageStatus(id, status);
-    await _syncUnreadBadge();
+    _events.add(
+      ChatRealtimeEvent(
+        type: 'message_status',
+        messageId: id,
+        status: status,
+        updatedAt: updatedAt,
+      ),
+    );
+    await _refreshUnreadFromBackend();
   }
 
   int? _parseMessageId(Map<String, dynamic> payload) {
@@ -188,14 +256,18 @@ class ChatRealtimeService {
     } catch (_) {}
   }
 
-  Future<void> _syncUnreadBadge() async {
-    if (_currentUserId == null) {
-      final user = await _storage.getUser();
-      _currentUserId = user?.id;
+  Future<void> _refreshUnreadFromBackend() async {
+    try {
+      final unread = await _api.getUnreadCount();
+      AppStateService.instance.setUnreadMessages(unread);
+    } catch (_) {
+      if (_currentUserId == null) {
+        final user = await _storage.getUser();
+        _currentUserId = user?.id;
+      }
+      if (_currentUserId == null) return;
+      final localUnread = await _db.getUnreadMessagesCount(_currentUserId!);
+      AppStateService.instance.setUnreadMessages(localUnread);
     }
-    if (_currentUserId == null) return;
-
-    final unread = await _db.getUnreadMessagesCount(_currentUserId!);
-    AppStateService.instance.setUnreadMessages(unread);
   }
 }

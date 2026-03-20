@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import '../models/pending_operation.dart';
 import '../models/todo.dart';
 import 'api_service.dart';
+import 'app_state_service.dart';
 import 'database_service.dart';
 
 class SyncService {
@@ -24,7 +26,9 @@ class SyncService {
       StreamController<void>.broadcast();
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  Timer? _pollTimer;
   bool _isSyncing = false;
+  static const Duration _pollInterval = Duration(seconds: 30);
 
   SyncService({DatabaseService? db, ApiService? api})
       : _db = db ?? DatabaseService(),
@@ -35,10 +39,16 @@ class SyncService {
   bool get isSyncing => _isSyncing;
 
   void startListening() {
+    _startPolling();
     _connectivitySub?.cancel();
     _connectivitySub =
         Connectivity().onConnectivityChanged.listen((results) async {
-      final isOnline = !results.contains(ConnectivityResult.none);
+      if (results.contains(ConnectivityResult.none)) {
+        AppStateService.instance.setOnline(false);
+        return;
+      }
+
+      final isOnline = await _api.isOnline();
       if (isOnline && !_isSyncing) {
         await processQueue();
       }
@@ -48,6 +58,8 @@ class SyncService {
   void stopListening() {
     _connectivitySub?.cancel();
     _connectivitySub = null;
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   Future<int> getPendingCount() => _db.getPendingOperationsCount();
@@ -128,6 +140,44 @@ class SyncService {
       }
     } finally {
       _isSyncing = false;
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_pollInterval, (_) async {
+      final online = await _checkConnectivity();
+      if (online && !_isSyncing) {
+        await processQueue();
+      }
+    });
+  }
+
+  Future<bool> _checkConnectivity() async {
+    return _api.isOnline();
+  }
+
+  Future<void> syncOnAppLaunch() async {
+    if (_isSyncing) return;
+
+    final online = await _api.isOnline();
+    if (!online) return;
+
+    try {
+      await processQueue();
+
+      await _api.getTodos(
+        status: 'all',
+        sortOrder: 'desc',
+        limit: 100,
+      );
+      await _api.getConversation(page: 1, perPage: 100);
+      final unread = await _api.getUnreadCount();
+      AppStateService.instance.setUnreadMessages(unread);
+
+      _syncController.add(null);
+    } catch (_) {
+      // Best effort at startup; regular screen loaders will handle errors.
     }
   }
 

@@ -215,8 +215,7 @@ void main() {
 
       final created = <String>[];
       when(() => mockDb.getPendingOperations()).thenAnswer((_) async => ops);
-      when(() => mockDb.deletePendingOperation(any()))
-          .thenAnswer((_) async {});
+      when(() => mockDb.deletePendingOperation(any())).thenAnswer((_) async {});
       when(() => mockApi.createTodo(any(), any())).thenAnswer((inv) async {
         created.add(inv.positionalArguments[0] as String);
         return makeTodo();
@@ -253,7 +252,8 @@ void main() {
 
       when(() => mockDb.getPendingOperations()).thenAnswer((_) async => ops);
       when(() => mockDb.deletePendingOperation(any())).thenAnswer((_) async {});
-      when(() => mockApi.createTodo('A', any())).thenThrow(Exception('server error'));
+      when(() => mockApi.createTodo('A', any()))
+          .thenThrow(Exception('server error'));
       when(() => mockApi.createTodo('B', any()))
           .thenAnswer((_) async => makeTodo());
 
@@ -271,6 +271,54 @@ void main() {
       final count = await sync.getPendingCount();
 
       expect(count, 3);
+    });
+  });
+
+  group('syncOnAppLaunch', () {
+    test('no sincroniza si el backend no responde al health check', () async {
+      when(() => mockApi.isOnline()).thenAnswer((_) async => false);
+
+      await sync.syncOnAppLaunch();
+
+      verify(() => mockApi.isOnline()).called(1);
+      verifyNever(() => mockDb.getPendingOperations());
+      verifyNever(() => mockApi.getTodos(
+            status: any(named: 'status'),
+            sortOrder: any(named: 'sortOrder'),
+            limit: any(named: 'limit'),
+          ));
+    });
+
+    test('sincroniza al iniciar si el backend está realmente online', () async {
+      when(() => mockApi.isOnline()).thenAnswer((_) async => true);
+      when(() => mockDb.getPendingOperations()).thenAnswer((_) async => []);
+      when(() => mockApi.getTodos(
+            status: any(named: 'status'),
+            sortOrder: any(named: 'sortOrder'),
+            limit: any(named: 'limit'),
+          )).thenAnswer((_) async => {
+            'todos': <Todo>[],
+            'page': 1,
+            'per_page': 100,
+            'total': 0,
+            'last_page': 1,
+          });
+      when(() => mockApi.getConversation(
+            page: any(named: 'page'),
+            perPage: any(named: 'perPage'),
+          )).thenAnswer((_) async => <Message>[]);
+      when(() => mockApi.getUnreadCount()).thenAnswer((_) async => 2);
+
+      await sync.syncOnAppLaunch();
+
+      verify(() => mockApi.isOnline()).called(1);
+      verify(() => mockApi.getTodos(
+            status: 'all',
+            sortOrder: 'desc',
+            limit: 100,
+          )).called(1);
+      verify(() => mockApi.getConversation(page: 1, perPage: 100)).called(1);
+      verify(() => mockApi.getUnreadCount()).called(1);
     });
   });
 

@@ -1,6 +1,7 @@
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/push_token_service.dart';
 import '../widgets/server_config_cog.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -126,6 +127,7 @@ class _LoginScreenState extends State<LoginScreen>
 
     try {
       await _apiService.login(selectedUser!, _passwordController.text);
+      await PushTokenService.instance.syncTokenWithBackend();
       if (mounted) {
         Navigator.of(context).pushNamedAndRemoveUntil(
           '/home',
@@ -135,8 +137,9 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       final error = e.toString().replaceFirst('Exception: ', '');
       setState(() {
-        _errorMessage =
-            error.contains('Inicio de sesión fallido') ? 'Contraseña incorrecta' : error;
+        _errorMessage = error.contains('Inicio de sesión fallido')
+            ? 'Contraseña incorrecta'
+            : error;
         _isLoading = false;
       });
     }

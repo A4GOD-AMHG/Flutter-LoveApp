@@ -1,20 +1,31 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/message.dart';
 import '../models/pending_operation.dart';
+import 'app_state_service.dart';
 import 'storage_service.dart';
 import 'database_service.dart';
 import '../models/user.dart';
 import '../models/todo.dart';
-import 'dart:convert';
-import 'dart:io';
 
 class OfflineException implements Exception {
   final String message;
   OfflineException([this.message = 'Sin conexión a internet']);
 }
 
+class AuthException implements Exception {
+  final String message;
+  AuthException([this.message = 'Sesión expirada']);
+}
+
 class ApiService {
+  static const String _healthStatusOk = 'ok';
+  static const String _healthServiceName = 'loveapp-backend';
+
   final StorageService _storage = StorageService();
   final DatabaseService _db = DatabaseService();
 
@@ -23,9 +34,61 @@ class ApiService {
     return host.endsWith('/') ? host.substring(0, host.length - 1) : host;
   }
 
+  void _setOnlineState(bool isOnline) {
+    AppStateService.instance.setOnline(isOnline);
+  }
+
+  Never _throwOffline() {
+    _setOnlineState(false);
+    throw OfflineException();
+  }
+
   Future<bool> isOnline() async {
     final result = await Connectivity().checkConnectivity();
-    return !result.contains(ConnectivityResult.none);
+    if (result.contains(ConnectivityResult.none)) {
+      _setOnlineState(false);
+      return false;
+    }
+
+    final healthy = await checkHealth();
+    _setOnlineState(healthy);
+    return healthy;
+  }
+
+  Future<bool> checkHealth() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final response = await http
+          .get(Uri.parse('$baseUrl/health'))
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode != 200) {
+        return false;
+      }
+
+      final data = jsonDecode(response.body);
+      if (data is! Map<String, dynamic>) {
+        return false;
+      }
+
+      final status = data['status']?.toString().toLowerCase();
+      final service = data['service']?.toString();
+
+      return status == _healthStatusOk &&
+          (service == null || service == _healthServiceName);
+    } on SocketException {
+      return false;
+    } on HttpException {
+      return false;
+    } on HandshakeException {
+      return false;
+    } on http.ClientException {
+      return false;
+    } on TimeoutException {
+      return false;
+    } on FormatException {
+      return false;
+    }
   }
 
   Future<Map<String, String>> _getHeaders() async {
@@ -35,6 +98,81 @@ class ApiService {
       if (token != null && token != StorageService.offlineSessionToken)
         'Authorization': 'Bearer $token',
     };
+  }
+
+  Future<http.Response> _authorizedRequest(
+    Future<http.Response> Function(Map<String, String> headers) request,
+  ) async {
+    var headers = await _getHeaders();
+    var response = await request(headers);
+    _setOnlineState(true);
+
+    if (response.statusCode == 401) {
+      final refreshed = await _tryReauthenticateSilently();
+      if (refreshed) {
+        headers = await _getHeaders();
+        response = await request(headers);
+        _setOnlineState(true);
+      }
+    }
+
+    if (response.statusCode == 401) {
+      throw AuthException('Sesión expirada');
+    }
+
+    return response;
+  }
+
+  Future<bool> _tryReauthenticateSilently() async {
+    if (!await isOnline()) return false;
+
+    final currentUser = await _storage.getUser();
+    final username = currentUser?.username.trim().toLowerCase();
+    if (username == null || username.isEmpty) return false;
+
+    final cachedPassword = await _db.getCachedPassword(username);
+    if (cachedPassword == null || cachedPassword.isEmpty) return false;
+
+    try {
+      final baseUrl = await _getBaseUrl();
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': username,
+          'password': cachedPassword,
+        }),
+      );
+
+      if (response.statusCode != 200) return false;
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      await _storeLoginData(
+        data: data,
+        normalizedUsername: username,
+        password: cachedPassword,
+      );
+      _setOnlineState(true);
+      return true;
+    } catch (_) {
+      _setOnlineState(false);
+      return false;
+    }
+  }
+
+  Future<void> _storeLoginData({
+    required Map<String, dynamic> data,
+    required String normalizedUsername,
+    required String password,
+  }) async {
+    final user = User.fromJson(data['user'] as Map<String, dynamic>);
+    await _storage.saveToken(data['token'] as String);
+    await _storage.saveUser(user);
+    await _db.cacheAuthCredentials(
+      username: normalizedUsername,
+      password: password,
+      userJson: user.toJson(),
+    );
   }
 
   Future<Map<String, dynamic>> login(String username, String password) async {
@@ -52,14 +190,12 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final user = User.fromJson(data['user'] as Map<String, dynamic>);
-        await _storage.saveToken(data['token'] as String);
-        await _storage.saveUser(user);
-        await _db.cacheAuthCredentials(
-          username: normalizedUsername,
+        await _storeLoginData(
+          data: data,
+          normalizedUsername: normalizedUsername,
           password: password,
-          userJson: user.toJson(),
         );
+        _setOnlineState(true);
         return data;
       } else {
         throw Exception('Login fallido: ${response.body}');
@@ -90,6 +226,7 @@ class ApiService {
     final user = User.fromJson(userJson);
     await _storage.saveUser(user);
     await _storage.saveToken(StorageService.offlineSessionToken);
+    _setOnlineState(false);
 
     return {
       'message': 'Inicio de sesión offline',
@@ -129,14 +266,23 @@ class ApiService {
     if (username == null || username.isEmpty) {
       throw Exception('No hay usuario en sesión');
     }
+    final userJson = currentUser?.toJson() ?? const <String, dynamic>{};
 
     try {
       await syncQueuedPasswordChange(newPassword);
-      await _db.updateCachedPassword(username, newPassword);
+      await _db.cacheAuthCredentials(
+        username: username,
+        password: newPassword,
+        userJson: userJson,
+      );
       return true;
     } on OfflineException {
       if (!allowQueue) rethrow;
-      await _db.updateCachedPassword(username, newPassword);
+      await _db.cacheAuthCredentials(
+        username: username,
+        password: newPassword,
+        userJson: userJson,
+      );
       await _db.savePendingOperation(
         PendingOperation(
           type: PendingOperation.typeChangePassword,
@@ -159,25 +305,26 @@ class ApiService {
     }
 
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/change-password'),
-        headers: headers,
-        body: jsonEncode({'new_password': newPassword}),
+      final response = await _authorizedRequest(
+        (headers) => http.post(
+          Uri.parse('$baseUrl/auth/change-password'),
+          headers: headers,
+          body: jsonEncode({'new_password': newPassword}),
+        ),
       );
 
       if (response.statusCode != 200) {
         throw Exception('Error al cambiar contraseña: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
     } on HttpException {
-      throw OfflineException();
+      _throwOffline();
     } on HandshakeException {
-      throw OfflineException();
+      _throwOffline();
     } on http.ClientException {
-      throw OfflineException();
+      _throwOffline();
     }
   }
 
@@ -191,7 +338,6 @@ class ApiService {
   }) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final headers = await _getHeaders();
       final queryParams = {
         if (creatorId != null) 'creator_id': creatorId.toString(),
         'status': status,
@@ -203,7 +349,9 @@ class ApiService {
 
       final uri =
           Uri.parse('$baseUrl/todos').replace(queryParameters: queryParams);
-      final response = await http.get(uri, headers: headers);
+      final response = await _authorizedRequest(
+        (headers) => http.get(uri, headers: headers),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -221,9 +369,13 @@ class ApiService {
         throw Exception('Error al obtener tareas: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
     } on HttpException {
-      throw OfflineException();
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
@@ -231,15 +383,16 @@ class ApiService {
 
   Future<Todo> createTodo(String title, String description) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/todos'),
-        headers: headers,
-        body: jsonEncode({
-          'title': title,
-          'description': description,
-        }),
+      final response = await _authorizedRequest(
+        (headers) => http.post(
+          Uri.parse('$baseUrl/todos'),
+          headers: headers,
+          body: jsonEncode({
+            'title': title,
+            'description': description,
+          }),
+        ),
       );
 
       if (response.statusCode == 201) {
@@ -249,21 +402,28 @@ class ApiService {
         throw Exception('Error al crear tarea: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
   Future<Todo> updateTodo(int id, String title, String description) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.put(
-        Uri.parse('$baseUrl/todos/$id'),
-        headers: headers,
-        body: jsonEncode({
-          'title': title,
-          'description': description,
-        }),
+      final response = await _authorizedRequest(
+        (headers) => http.put(
+          Uri.parse('$baseUrl/todos/$id'),
+          headers: headers,
+          body: jsonEncode({
+            'title': title,
+            'description': description,
+          }),
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -272,18 +432,25 @@ class ApiService {
         throw Exception('Error al actualizar tarea: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
   Future<Todo> updateTodoStatus(int id, bool completed) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.patch(
-        Uri.parse('$baseUrl/todos/$id'),
-        headers: headers,
-        body: jsonEncode({'completed': completed}),
+      final response = await _authorizedRequest(
+        (headers) => http.patch(
+          Uri.parse('$baseUrl/todos/$id'),
+          headers: headers,
+          body: jsonEncode({'completed': completed}),
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -295,35 +462,49 @@ class ApiService {
         throw Exception(errorMessage);
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
   Future<void> deleteTodo(int id) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.delete(
-        Uri.parse('$baseUrl/todos/$id'),
-        headers: headers,
+      final response = await _authorizedRequest(
+        (headers) => http.delete(
+          Uri.parse('$baseUrl/todos/$id'),
+          headers: headers,
+        ),
       );
 
       if (response.statusCode != 200) {
         throw Exception('Error al eliminar tarea: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
   Future<Message> sendMessage(String content) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/messages'),
-        headers: headers,
-        body: jsonEncode({'content': content}),
+      final response = await _authorizedRequest(
+        (headers) => http.post(
+          Uri.parse('$baseUrl/messages'),
+          headers: headers,
+          body: jsonEncode({'content': content}),
+        ),
       );
 
       if (response.statusCode == 201) {
@@ -334,53 +515,148 @@ class ApiService {
         throw Exception('Error al enviar mensaje: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
   Future<void> markMessageRead(int id) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.patch(
-        Uri.parse('$baseUrl/messages/$id/read'),
-        headers: headers,
+      final response = await _authorizedRequest(
+        (headers) => http.patch(
+          Uri.parse('$baseUrl/messages/$id/read'),
+          headers: headers,
+        ),
       );
       if (response.statusCode != 200) {
         throw Exception('Error al marcar mensaje leído: ${response.body}');
       }
       await _db.updateMessageStatus(id, 'read');
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
     } on HttpException {
-      throw OfflineException();
+      _throwOffline();
     } on HandshakeException {
-      throw OfflineException();
+      _throwOffline();
     } on http.ClientException {
-      throw OfflineException();
+      _throwOffline();
     }
   }
 
   Future<void> markMessageDelivered(int id) async {
     final baseUrl = await _getBaseUrl();
-    final headers = await _getHeaders();
     try {
-      final response = await http.patch(
-        Uri.parse('$baseUrl/messages/$id/delivered'),
-        headers: headers,
+      final response = await _authorizedRequest(
+        (headers) => http.patch(
+          Uri.parse('$baseUrl/messages/$id/delivered'),
+          headers: headers,
+        ),
       );
       if (response.statusCode != 200) {
         throw Exception('Error al marcar mensaje entregado: ${response.body}');
       }
       await _db.updateMessageStatus(id, 'delivered');
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
     } on HttpException {
-      throw OfflineException();
+      _throwOffline();
     } on HandshakeException {
-      throw OfflineException();
+      _throwOffline();
     } on http.ClientException {
-      throw OfflineException();
+      _throwOffline();
+    }
+  }
+
+  Future<int> getUnreadCount() async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final response = await _authorizedRequest(
+        (headers) => http.get(
+          Uri.parse('$baseUrl/messages/unread-count'),
+          headers: headers,
+        ),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Error al obtener no leídos: ${response.body}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return data['unread_count'] as int? ?? 0;
+    } on SocketException {
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
+    }
+  }
+
+  Future<void> registerPushToken({
+    required String pushToken,
+    required String platform,
+    required String deviceName,
+  }) async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final response = await _authorizedRequest(
+        (headers) => http.post(
+          Uri.parse('$baseUrl/devices/push-token'),
+          headers: headers,
+          body: jsonEncode({
+            'platform': platform,
+            'push_token': pushToken,
+            'device_name': deviceName,
+          }),
+        ),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Error registrando push token: ${response.body}');
+      }
+    } on SocketException {
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
+    }
+  }
+
+  Future<void> deletePushToken(String pushToken) async {
+    try {
+      final baseUrl = await _getBaseUrl();
+      final response = await _authorizedRequest(
+        (headers) => http.delete(
+          Uri.parse('$baseUrl/devices/push-token'),
+          headers: headers,
+          body: jsonEncode({
+            'push_token': pushToken,
+          }),
+        ),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Error eliminando push token: ${response.body}');
+      }
+    } on SocketException {
+      _throwOffline();
+    } on HttpException {
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 
@@ -388,7 +664,6 @@ class ApiService {
       {int page = 1, int perPage = 10}) async {
     try {
       final baseUrl = await _getBaseUrl();
-      final headers = await _getHeaders();
       final uri = Uri.parse('$baseUrl/messages/conversation').replace(
         queryParameters: {
           'page': page.toString(),
@@ -396,11 +671,26 @@ class ApiService {
         },
       );
 
-      final response = await http.get(uri, headers: headers);
+      final response = await _authorizedRequest(
+        (headers) => http.get(uri, headers: headers),
+      );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final messages = data.map((e) => Message.fromJson(e)).toList();
+        final decoded = jsonDecode(response.body);
+        final List<dynamic> rawMessages;
+        if (decoded is List<dynamic>) {
+          rawMessages = decoded;
+        } else if (decoded is Map<String, dynamic> &&
+            decoded['messages'] is List<dynamic>) {
+          rawMessages = decoded['messages'] as List<dynamic>;
+        } else {
+          rawMessages = const [];
+        }
+
+        final messages = rawMessages
+            .whereType<Map<String, dynamic>>()
+            .map(Message.fromJson)
+            .toList();
         if (page == 1) {
           await _db.saveMessages(messages);
         }
@@ -409,9 +699,13 @@ class ApiService {
         throw Exception('Error al obtener conversación: ${response.body}');
       }
     } on SocketException {
-      throw OfflineException();
+      _throwOffline();
     } on HttpException {
-      throw OfflineException();
+      _throwOffline();
+    } on HandshakeException {
+      _throwOffline();
+    } on http.ClientException {
+      _throwOffline();
     }
   }
 

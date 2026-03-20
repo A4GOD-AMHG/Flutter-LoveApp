@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../services/storage_service.dart';
 import '../services/sync_service.dart';
+import '../services/app_state_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
@@ -9,6 +10,7 @@ import '../models/todo.dart';
 import '../models/user.dart';
 
 enum _ConnectionStatus { online, offline }
+enum _AuthBannerState { hidden, reconnecting, online, sessionExpired }
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -25,8 +27,11 @@ class _TasksScreenState extends State<TasksScreen> {
   String _filter = 'all';
   User? _currentUser;
   _ConnectionStatus _connectionStatus = _ConnectionStatus.online;
+  _AuthBannerState _authBannerState = _AuthBannerState.hidden;
   final Set<int> _pendingLocalIds = {};
   StreamSubscription<void>? _syncSub;
+  VoidCallback? _localDataResetListener;
+  Timer? _bannerTimer;
 
   @override
   void initState() {
@@ -34,6 +39,9 @@ class _TasksScreenState extends State<TasksScreen> {
     _syncSub = SyncService.instance.onSyncComplete.listen((_) {
       _loadTodos();
     });
+    _localDataResetListener = _handleLocalDataReset;
+    AppStateService.instance.localDataResetVersion
+        .addListener(_localDataResetListener!);
     _loadCurrentUser();
     _loadTodos();
   }
@@ -41,7 +49,21 @@ class _TasksScreenState extends State<TasksScreen> {
   @override
   void dispose() {
     _syncSub?.cancel();
+    _bannerTimer?.cancel();
+    if (_localDataResetListener != null) {
+      AppStateService.instance.localDataResetVersion
+          .removeListener(_localDataResetListener!);
+    }
     super.dispose();
+  }
+
+  void _handleLocalDataReset() {
+    if (!mounted) return;
+    setState(() {
+      _todos = [];
+      _pendingLocalIds.clear();
+      _isLoading = false;
+    });
   }
 
   Future<void> _loadCurrentUser() async {
@@ -53,6 +75,9 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Future<void> _loadTodos() async {
     setState(() => _isLoading = true);
+    final shouldShowOnline = _connectionStatus == _ConnectionStatus.offline ||
+        _authBannerState == _AuthBannerState.reconnecting ||
+        _authBannerState == _AuthBannerState.sessionExpired;
 
     try {
       final result = await _apiService.getTodos(
@@ -67,7 +92,13 @@ class _TasksScreenState extends State<TasksScreen> {
           _isLoading = false;
           _connectionStatus = _ConnectionStatus.online;
         });
+        if (shouldShowOnline) {
+          _showOnlineBanner();
+        }
+        AppStateService.instance.setOnline(true);
       }
+    } on AuthException {
+      await _handleAuth401Todos();
     } on OfflineException {
       final cached = await _apiService.getCachedTodos();
       if (mounted) {
@@ -75,16 +106,96 @@ class _TasksScreenState extends State<TasksScreen> {
           _todos = cached;
           _isLoading = false;
           _connectionStatus = _ConnectionStatus.offline;
+          _authBannerState = _AuthBannerState.hidden;
         });
+        AppStateService.instance.setOnline(false);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar tareas: $e')),
+          SnackBar(
+            content: Text('Error al cargar tareas: $e', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
+  }
+
+  Future<void> _handleAuth401Todos() async {
+    if (mounted) {
+      setState(() {
+        _authBannerState = _AuthBannerState.reconnecting;
+      });
+    }
+
+    try {
+      final result = await _apiService.getTodos(
+        status: _filter,
+        sortOrder: 'desc',
+        limit: 100,
+      );
+      if (mounted) {
+        setState(() {
+          _todos = result['todos'] as List<Todo>;
+          _pendingLocalIds.clear();
+          _isLoading = false;
+          _connectionStatus = _ConnectionStatus.online;
+        });
+        _showOnlineBanner();
+        AppStateService.instance.setOnline(true);
+      }
+      return;
+    } on AuthException {
+      final cached = await _apiService.getCachedTodos();
+      if (mounted) {
+        setState(() {
+          _todos = cached;
+          _isLoading = false;
+          _connectionStatus = _ConnectionStatus.online;
+          _authBannerState = _AuthBannerState.sessionExpired;
+        });
+        AppStateService.instance.setOnline(true);
+      }
+      return;
+    } on OfflineException {
+      final cached = await _apiService.getCachedTodos();
+      if (mounted) {
+        setState(() {
+          _todos = cached;
+          _isLoading = false;
+          _connectionStatus = _ConnectionStatus.offline;
+          _authBannerState = _AuthBannerState.hidden;
+        });
+        AppStateService.instance.setOnline(false);
+      }
+      return;
+    } catch (_) {
+      final cached = await _apiService.getCachedTodos();
+      if (mounted) {
+        setState(() {
+          _todos = cached;
+          _isLoading = false;
+          _authBannerState = _AuthBannerState.sessionExpired;
+        });
+      }
+      return;
+    }
+  }
+
+  void _showOnlineBanner() {
+    if (!mounted) return;
+    _bannerTimer?.cancel();
+    setState(() {
+      _authBannerState = _AuthBannerState.online;
+    });
+    _bannerTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() {
+        _authBannerState = _AuthBannerState.hidden;
+      });
+    });
   }
 
   Future<void> _createTodo() async {
@@ -185,7 +296,7 @@ class _TasksScreenState extends State<TasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Tarea guardada. Se enviará cuando tengas conexión.'),
+            content: Text('Tarea guardada. Se enviará cuando tengas conexión.', style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.orange,
           ),
         );
@@ -193,7 +304,10 @@ class _TasksScreenState extends State<TasksScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al crear tarea: $e')),
+          SnackBar(
+            content: Text('Error al crear tarea: $e', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -211,17 +325,44 @@ class _TasksScreenState extends State<TasksScreen> {
     }
 
     try {
-      await _apiService.updateTodoStatus(todo.id, !currentStatus);
-      _loadTodos();
+      final updated = await _apiService.updateTodoStatus(todo.id, !currentStatus);
+      if (mounted) {
+        setState(() {
+          final idx = _todos.indexWhere((t) => t.id == todo.id);
+          if (idx >= 0) {
+            _todos[idx] = updated;
+          }
+          _pendingLocalIds.remove(todo.id);
+        });
+      }
     } on OfflineException {
       await SyncService.instance.enqueueTodoStatusUpdate(todo.id, !currentStatus);
       if (mounted) {
+        final optimistic = Todo(
+          id: todo.id,
+          title: todo.title,
+          description: todo.description,
+          creatorId: todo.creatorId,
+          creatorUsername: todo.creatorUsername,
+          completedAnyel:
+              _currentUser?.username == 'anyel' ? !currentStatus : todo.completedAnyel,
+          completedAlexis: _currentUser?.username == 'anyel'
+              ? todo.completedAlexis
+              : !currentStatus,
+          isCompleted: todo.isCompleted,
+          createdAt: todo.createdAt,
+          updatedAt: DateTime.now(),
+        );
         setState(() {
+          final idx = _todos.indexWhere((t) => t.id == todo.id);
+          if (idx >= 0) {
+            _todos[idx] = optimistic;
+          }
           _pendingLocalIds.add(todo.id);
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cambio guardado. Se enviará cuando tengas conexión.'),
+            content: Text('Cambio guardado. Se enviará cuando tengas conexión.', style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.orange,
           ),
         );
@@ -230,7 +371,7 @@ class _TasksScreenState extends State<TasksScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            content: Text(e.toString().replaceFirst('Exception: ', ''), style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -299,7 +440,7 @@ class _TasksScreenState extends State<TasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Eliminación pendiente. Se aplicará cuando tengas conexión.'),
+            content: Text('Eliminación pendiente. Se aplicará cuando tengas conexión.', style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.orange,
           ),
         );
@@ -307,7 +448,10 @@ class _TasksScreenState extends State<TasksScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al eliminar: $e')),
+          SnackBar(
+            content: Text('Error al eliminar: $e', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -323,22 +467,7 @@ class _TasksScreenState extends State<TasksScreen> {
     return Column(
       children: [
         const Header(),
-        if (_connectionStatus == _ConnectionStatus.offline)
-          Container(
-            width: double.infinity,
-            color: Colors.grey[700],
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-            child: const Row(
-              children: [
-                Icon(Icons.wifi_off, color: Colors.white, size: 16),
-                SizedBox(width: 8),
-                Text(
-                  'Sin conexión — los cambios se sincronizarán al conectarte',
-                  style: TextStyle(color: Colors.white, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
+        _buildAuthBanner(),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -435,6 +564,73 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
+  Widget _buildAuthBanner() {
+    if (_authBannerState == _AuthBannerState.hidden) {
+      return const SizedBox.shrink();
+    }
+
+    if (_authBannerState == _AuthBannerState.reconnecting) {
+      return Container(
+        width: double.infinity,
+        color: Colors.orange[700],
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            SizedBox(width: 10),
+            Text(
+              'Reconectando sesión...',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_authBannerState == _AuthBannerState.online) {
+      return Container(
+        width: double.infinity,
+        color: Colors.green[700],
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        child: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 16),
+            SizedBox(width: 8),
+            Text(
+              'Conexión restablecida',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      color: Colors.red[700],
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+      child: const Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Sesión expirada. Cierra sesión y vuelve a iniciar.',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTodoCard(Todo todo, Color cardColor, Color textColor) {
     final isPending = _pendingLocalIds.contains(todo.id);
     final userId = _currentUser?.id;
@@ -459,10 +655,10 @@ class _TasksScreenState extends State<TasksScreen> {
                 if (isPending)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: Tooltip(
-                      message: 'Pendiente de sincronización',
-                      child: Icon(Icons.cloud_upload_outlined,
-                          size: 18, color: Colors.orange[400]),
+                    child: Icon(
+                      Icons.schedule,
+                      size: 18,
+                      color: Colors.purpleAccent.shade100,
                     ),
                   ),
                 Expanded(
@@ -471,11 +667,9 @@ class _TasksScreenState extends State<TasksScreen> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: isPending
-                          ? textColor.withValues(alpha: 0.6)
-                          : isCompletedByMe
-                              ? textColor.withValues(alpha: 0.5)
-                              : textColor,
+                      color: isCompletedByMe
+                          ? textColor.withValues(alpha: 0.5)
+                          : textColor,
                       decoration: isCompletedByMe ? TextDecoration.lineThrough : null,
                       decorationThickness: isCompletedByMe ? 2.5 : null,
                       decorationColor: isCompletedByMe ? Colors.red : null,
@@ -487,23 +681,33 @@ class _TasksScreenState extends State<TasksScreen> {
                     icon: const Icon(Icons.delete, color: Colors.red),
                     onPressed: () => _deleteTodo(todo),
                   ),
-                if (!isPending)
-                  Checkbox(
-                    value: isCompletedByMe,
-                    onChanged: todo.isCompleted ? null : (_) => _toggleTodo(todo),
-                  ),
+                Checkbox(
+                  value: isCompletedByMe,
+                  onChanged:
+                      (isPending || todo.isCompleted) ? null : (_) => _toggleTodo(todo),
+                ),
               ],
             ),
             if (isPending)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '⏳ Pendiente de envío',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.orange[400],
-                    fontStyle: FontStyle.italic,
-                  ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      size: 14,
+                      color: Colors.purple[200],
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Enviando...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.purple[200],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             if (!isPending && todo.description.isNotEmpty) ...[
