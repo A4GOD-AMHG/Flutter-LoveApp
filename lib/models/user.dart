@@ -19,10 +19,10 @@ class User {
       username: json['username'] as String? ?? '',
       name: json['name'] as String? ?? '',
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+          ? DateTime.parse(json['created_at'] as String).toLocal()
           : DateTime.now(),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? DateTime.parse(json['updated_at'] as String).toLocal()
           : DateTime.now(),
     );
   }

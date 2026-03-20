@@ -33,8 +33,8 @@ class Todo {
       completedAnyel: json['completed_anyel'] ?? false,
       completedAlexis: json['completed_alexis'] ?? false,
       isCompleted: json['is_completed'] ?? false,
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      createdAt: DateTime.parse(json['created_at']).toLocal(),
+      updatedAt: DateTime.parse(json['updated_at']).toLocal(),
     );
   }
 

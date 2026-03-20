@@ -33,10 +33,10 @@ class Message {
       content: json['content'] as String? ?? '',
       status: json['status'] as String? ?? 'sent',
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+          ? DateTime.parse(json['created_at'] as String).toLocal()
           : DateTime.now(),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? DateTime.parse(json['updated_at'] as String).toLocal()
           : DateTime.now(),
     );
   }
