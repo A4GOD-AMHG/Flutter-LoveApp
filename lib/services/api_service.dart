@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/message.dart';
+import '../models/pending_operation.dart';
 import 'storage_service.dart';
 import 'database_service.dart';
 import '../models/user.dart';
@@ -31,55 +32,152 @@ class ApiService {
     final token = await _storage.getToken();
     return {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (token != null && token != StorageService.offlineSessionToken)
+        'Authorization': 'Bearer $token',
     };
   }
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     final baseUrl = await _getBaseUrl();
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'username': username,
-        'password': password,
-      }),
-    );
+    final normalizedUsername = username.trim().toLowerCase();
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      await _storage.saveToken(data['token']);
-      await _storage.saveUser(User.fromJson(data['user']));
-      return data;
-    } else {
-      throw Exception('Login fallido: ${response.body}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final user = User.fromJson(data['user'] as Map<String, dynamic>);
+        await _storage.saveToken(data['token'] as String);
+        await _storage.saveUser(user);
+        await _db.cacheAuthCredentials(
+          username: normalizedUsername,
+          password: password,
+          userJson: user.toJson(),
+        );
+        return data;
+      } else {
+        throw Exception('Login fallido: ${response.body}');
+      }
+    } on SocketException {
+      return _loginOffline(normalizedUsername, password);
+    } on HttpException {
+      return _loginOffline(normalizedUsername, password);
+    } on HandshakeException {
+      return _loginOffline(normalizedUsername, password);
+    } on http.ClientException {
+      return _loginOffline(normalizedUsername, password);
     }
+  }
+
+  Future<Map<String, dynamic>> _loginOffline(
+      String username, String password) async {
+    final valid = await _db.validateCachedPassword(username, password);
+    if (!valid) {
+      throw Exception('Sin conexión y contraseña local incorrecta');
+    }
+
+    final userJson = await _db.getCachedUserJson(username);
+    if (userJson == null) {
+      throw Exception('Sin conexión y no hay datos locales de usuario');
+    }
+
+    final user = User.fromJson(userJson);
+    await _storage.saveUser(user);
+    await _storage.saveToken(StorageService.offlineSessionToken);
+
+    return {
+      'message': 'Inicio de sesión offline',
+      'offline': true,
+      'user': user.toJson(),
+    };
   }
 
   Future<void> logout() async {
     try {
-      final baseUrl = await _getBaseUrl();
-      final headers = await _getHeaders();
-      await http.post(
-        Uri.parse('$baseUrl/auth/logout'),
-        headers: headers,
-      );
+      final token = await _storage.getToken();
+      if (token != null && token != StorageService.offlineSessionToken) {
+        final baseUrl = await _getBaseUrl();
+        final headers = await _getHeaders();
+        await http.post(
+          Uri.parse('$baseUrl/auth/logout'),
+          headers: headers,
+        );
+      }
+    } on SocketException {
+      // Allow local logout while offline.
+    } on HttpException {
+      // Allow local logout while offline.
+    } on HandshakeException {
+      // Allow local logout while offline.
+    } on http.ClientException {
+      // Allow local logout while offline.
     } finally {
       await _storage.clearAll();
     }
   }
 
-  Future<void> changePassword(String newPassword) async {
+  Future<bool> changePassword(String newPassword,
+      {bool allowQueue = true}) async {
+    final currentUser = await _storage.getUser();
+    final username = currentUser?.username.trim().toLowerCase();
+    if (username == null || username.isEmpty) {
+      throw Exception('No hay usuario en sesión');
+    }
+
+    try {
+      await syncQueuedPasswordChange(newPassword);
+      await _db.updateCachedPassword(username, newPassword);
+      return true;
+    } on OfflineException {
+      if (!allowQueue) rethrow;
+      await _db.updateCachedPassword(username, newPassword);
+      await _db.savePendingOperation(
+        PendingOperation(
+          type: PendingOperation.typeChangePassword,
+          payload: jsonEncode({
+            'username': username,
+            'new_password': newPassword,
+          }),
+          createdAt: DateTime.now(),
+        ),
+      );
+      return false;
+    }
+  }
+
+  Future<void> syncQueuedPasswordChange(String newPassword) async {
+    final token = await _storage.getToken();
+    if (token == null || token == StorageService.offlineSessionToken) {
+      throw OfflineException(
+          'No hay sesión remota para sincronizar contraseña');
+    }
+
     final baseUrl = await _getBaseUrl();
     final headers = await _getHeaders();
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/change-password'),
-      headers: headers,
-      body: jsonEncode({'new_password': newPassword}),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/change-password'),
+        headers: headers,
+        body: jsonEncode({'new_password': newPassword}),
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception('Error al cambiar contraseña: ${response.body}');
+      if (response.statusCode != 200) {
+        throw Exception('Error al cambiar contraseña: ${response.body}');
+      }
+    } on SocketException {
+      throw OfflineException();
+    } on HttpException {
+      throw OfflineException();
+    } on HandshakeException {
+      throw OfflineException();
+    } on http.ClientException {
+      throw OfflineException();
     }
   }
 
@@ -236,6 +334,52 @@ class ApiService {
         throw Exception('Error al enviar mensaje: ${response.body}');
       }
     } on SocketException {
+      throw OfflineException();
+    }
+  }
+
+  Future<void> markMessageRead(int id) async {
+    final baseUrl = await _getBaseUrl();
+    final headers = await _getHeaders();
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/messages/$id/read'),
+        headers: headers,
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Error al marcar mensaje leído: ${response.body}');
+      }
+      await _db.updateMessageStatus(id, 'read');
+    } on SocketException {
+      throw OfflineException();
+    } on HttpException {
+      throw OfflineException();
+    } on HandshakeException {
+      throw OfflineException();
+    } on http.ClientException {
+      throw OfflineException();
+    }
+  }
+
+  Future<void> markMessageDelivered(int id) async {
+    final baseUrl = await _getBaseUrl();
+    final headers = await _getHeaders();
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/messages/$id/delivered'),
+        headers: headers,
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Error al marcar mensaje entregado: ${response.body}');
+      }
+      await _db.updateMessageStatus(id, 'delivered');
+    } on SocketException {
+      throw OfflineException();
+    } on HttpException {
+      throw OfflineException();
+    } on HandshakeException {
+      throw OfflineException();
+    } on http.ClientException {
       throw OfflineException();
     }
   }

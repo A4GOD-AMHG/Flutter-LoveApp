@@ -70,9 +70,10 @@ class SyncService {
     });
   }
 
-  Future<void> enqueueMessageSend(String content) async {
+  Future<void> enqueueMessageSend(String content, {int? tempId}) async {
     await enqueueOperation(PendingOperation.typeSendMessage, {
       'content': content,
+      if (tempId != null) 'temp_id': tempId,
     });
   }
 
@@ -86,6 +87,14 @@ class SyncService {
   Future<void> enqueueTodoDeletion(int id) async {
     await enqueueOperation(PendingOperation.typeDeleteTodo, {
       'id': id,
+    });
+  }
+
+  Future<void> enqueuePasswordChange(
+      String username, String newPassword) async {
+    await enqueueOperation(PendingOperation.typeChangePassword, {
+      'username': username,
+      'new_password': newPassword,
     });
   }
 
@@ -133,6 +142,9 @@ class SyncService {
         );
       case PendingOperation.typeSendMessage:
         await _api.sendMessage(payload['content'] as String);
+        if (payload['temp_id'] != null) {
+          await _db.deleteMessageById(payload['temp_id'] as int);
+        }
       case PendingOperation.typeUpdateTodoStatus:
         await _api.updateTodoStatus(
           payload['id'] as int,
@@ -140,6 +152,8 @@ class SyncService {
         );
       case PendingOperation.typeDeleteTodo:
         await _api.deleteTodo(payload['id'] as int);
+      case PendingOperation.typeChangePassword:
+        await _api.syncQueuedPasswordChange(payload['new_password'] as String);
     }
   }
 

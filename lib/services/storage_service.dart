@@ -11,6 +11,7 @@ class StorageService {
 
   static const String defaultHost = 'https://loveapp.duckdns.org/';
   static const String defaultWsUrl = 'wss://loveapp.duckdns.org/ws';
+  static const String offlineSessionToken = '__offline_session__';
 
   Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();

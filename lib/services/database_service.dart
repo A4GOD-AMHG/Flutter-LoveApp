@@ -26,12 +26,12 @@ class DatabaseService {
   }
 
   static Future<Database> _initDb() async {
-    final fullPath = _overridePath ??
-        path.join(await getDatabasesPath(), 'love_app.db');
+    final fullPath =
+        _overridePath ?? path.join(await getDatabasesPath(), 'love_app.db');
 
     return openDatabase(
       fullPath,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -75,9 +75,19 @@ class DatabaseService {
         created_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE auth_cache (
+        username TEXT PRIMARY KEY,
+        password TEXT NOT NULL,
+        user_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
   }
 
-  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  static Future<void> _onUpgrade(
+      Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS pending_operations (
@@ -88,24 +98,38 @@ class DatabaseService {
         )
       ''');
     }
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS auth_cache (
+          username TEXT PRIMARY KEY,
+          password TEXT NOT NULL,
+          user_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
+    }
   }
 
   Future<void> saveTodos(List<Todo> todos) async {
     final db = await database;
     final batch = db.batch();
     for (final todo in todos) {
-      batch.insert('todos', {
-        'id': todo.id,
-        'title': todo.title,
-        'description': todo.description,
-        'creator_id': todo.creatorId,
-        'creator_username': todo.creatorUsername,
-        'completed_anyel': todo.completedAnyel ? 1 : 0,
-        'completed_alexis': todo.completedAlexis ? 1 : 0,
-        'is_completed': todo.isCompleted ? 1 : 0,
-        'created_at': todo.createdAt.toIso8601String(),
-        'updated_at': todo.updatedAt.toIso8601String(),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      batch.insert(
+          'todos',
+          {
+            'id': todo.id,
+            'title': todo.title,
+            'description': todo.description,
+            'creator_id': todo.creatorId,
+            'creator_username': todo.creatorUsername,
+            'completed_anyel': todo.completedAnyel ? 1 : 0,
+            'completed_alexis': todo.completedAlexis ? 1 : 0,
+            'is_completed': todo.isCompleted ? 1 : 0,
+            'created_at': todo.createdAt.toIso8601String(),
+            'updated_at': todo.updatedAt.toIso8601String(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -113,35 +137,40 @@ class DatabaseService {
   Future<List<Todo>> getCachedTodos() async {
     final db = await database;
     final rows = await db.query('todos', orderBy: 'created_at DESC');
-    return rows.map((row) => Todo(
-      id: row['id'] as int,
-      title: row['title'] as String,
-      description: row['description'] as String? ?? '',
-      creatorId: row['creator_id'] as int,
-      creatorUsername: row['creator_username'] as String,
-      completedAnyel: (row['completed_anyel'] as int) == 1,
-      completedAlexis: (row['completed_alexis'] as int) == 1,
-      isCompleted: (row['is_completed'] as int) == 1,
-      createdAt: DateTime.parse(row['created_at'] as String),
-      updatedAt: DateTime.parse(row['updated_at'] as String),
-    )).toList();
+    return rows
+        .map((row) => Todo(
+              id: row['id'] as int,
+              title: row['title'] as String,
+              description: row['description'] as String? ?? '',
+              creatorId: row['creator_id'] as int,
+              creatorUsername: row['creator_username'] as String,
+              completedAnyel: (row['completed_anyel'] as int) == 1,
+              completedAlexis: (row['completed_alexis'] as int) == 1,
+              isCompleted: (row['is_completed'] as int) == 1,
+              createdAt: DateTime.parse(row['created_at'] as String),
+              updatedAt: DateTime.parse(row['updated_at'] as String),
+            ))
+        .toList();
   }
 
   Future<void> saveMessages(List<Message> messages) async {
     final db = await database;
     final batch = db.batch();
     for (final msg in messages) {
-      batch.insert('messages', {
-        'id': msg.id,
-        'sender_id': msg.senderId,
-        'receiver_id': msg.receiverId,
-        'sender_json': jsonEncode(msg.sender.toJson()),
-        'receiver_json': jsonEncode(msg.receiver.toJson()),
-        'content': msg.content,
-        'status': msg.status,
-        'created_at': msg.createdAt.toIso8601String(),
-        'updated_at': msg.updatedAt.toIso8601String(),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      batch.insert(
+          'messages',
+          {
+            'id': msg.id,
+            'sender_id': msg.senderId,
+            'receiver_id': msg.receiverId,
+            'sender_json': jsonEncode(msg.sender.toJson()),
+            'receiver_json': jsonEncode(msg.receiver.toJson()),
+            'content': msg.content,
+            'status': msg.status,
+            'created_at': msg.createdAt.toIso8601String(),
+            'updated_at': msg.updatedAt.toIso8601String(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -150,8 +179,10 @@ class DatabaseService {
     final db = await database;
     final rows = await db.query('messages', orderBy: 'created_at ASC');
     return rows.map((row) {
-      final senderJson = jsonDecode(row['sender_json'] as String) as Map<String, dynamic>;
-      final receiverJson = jsonDecode(row['receiver_json'] as String) as Map<String, dynamic>;
+      final senderJson =
+          jsonDecode(row['sender_json'] as String) as Map<String, dynamic>;
+      final receiverJson =
+          jsonDecode(row['receiver_json'] as String) as Map<String, dynamic>;
       return Message.fromJson({
         'id': row['id'],
         'sender_id': row['sender_id'],
@@ -168,17 +199,64 @@ class DatabaseService {
 
   Future<void> insertMessage(Message msg) async {
     final db = await database;
-    await db.insert('messages', {
-      'id': msg.id,
-      'sender_id': msg.senderId,
-      'receiver_id': msg.receiverId,
-      'sender_json': jsonEncode(msg.sender.toJson()),
-      'receiver_json': jsonEncode(msg.receiver.toJson()),
-      'content': msg.content,
-      'status': msg.status,
-      'created_at': msg.createdAt.toIso8601String(),
-      'updated_at': msg.updatedAt.toIso8601String(),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+        'messages',
+        {
+          'id': msg.id,
+          'sender_id': msg.senderId,
+          'receiver_id': msg.receiverId,
+          'sender_json': jsonEncode(msg.sender.toJson()),
+          'receiver_json': jsonEncode(msg.receiver.toJson()),
+          'content': msg.content,
+          'status': msg.status,
+          'created_at': msg.createdAt.toIso8601String(),
+          'updated_at': msg.updatedAt.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> updateMessageStatus(int messageId, String status) async {
+    final db = await database;
+    await db.update(
+      'messages',
+      {
+        'status': status,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+  }
+
+  Future<void> deleteMessageById(int messageId) async {
+    final db = await database;
+    await db.delete('messages', where: 'id = ?', whereArgs: [messageId]);
+  }
+
+  Future<int> getUnreadMessagesCount(int currentUserId) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      '''
+      SELECT COUNT(*) FROM messages
+      WHERE sender_id != ?
+      AND status != ?
+      ''',
+      [currentUserId, 'read'],
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<void> markIncomingMessagesAsRead(int currentUserId) async {
+    final db = await database;
+    await db.update(
+      'messages',
+      {
+        'status': 'read',
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'sender_id != ? AND status != ?',
+      whereArgs: [currentUserId, 'read'],
+    );
   }
 
   Future<void> savePendingOperation(PendingOperation op) async {
@@ -205,5 +283,65 @@ class DatabaseService {
     final db = await database;
     final result = await db.rawQuery('SELECT COUNT(*) FROM pending_operations');
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<void> cacheAuthCredentials({
+    required String username,
+    required String password,
+    required Map<String, dynamic> userJson,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'auth_cache',
+      {
+        'username': username.trim().toLowerCase(),
+        'password': password,
+        'user_json': jsonEncode(userJson),
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<bool> validateCachedPassword(String username, String password) async {
+    final db = await database;
+    final rows = await db.query(
+      'auth_cache',
+      columns: ['password'],
+      where: 'username = ?',
+      whereArgs: [username.trim().toLowerCase()],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+    return (rows.first['password'] as String) == password;
+  }
+
+  Future<Map<String, dynamic>?> getCachedUserJson(String username) async {
+    final db = await database;
+    final rows = await db.query(
+      'auth_cache',
+      columns: ['user_json'],
+      where: 'username = ?',
+      whereArgs: [username.trim().toLowerCase()],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return jsonDecode(rows.first['user_json'] as String)
+        as Map<String, dynamic>;
+  }
+
+  Future<void> updateCachedPassword(String username, String newPassword) async {
+    final db = await database;
+    await db.update(
+      'auth_cache',
+      {
+        'password': newPassword,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'username = ?',
+      whereArgs: [username.trim().toLowerCase()],
+    );
   }
 }

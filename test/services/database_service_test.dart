@@ -107,7 +107,8 @@ void main() {
       final cached = await db.getCachedTodos();
 
       expect(cached.length, 2);
-      expect(cached.map((t) => t.title), containsAll(['Tarea uno', 'Tarea dos']));
+      expect(
+          cached.map((t) => t.title), containsAll(['Tarea uno', 'Tarea dos']));
     });
 
     test('sobrescribe todo existente con mismo id (upsert)', () async {
@@ -208,7 +209,8 @@ void main() {
   });
 
   group('Flujo offline completo — todos', () {
-    test('guarda todo en caché, agrega operación pendiente y se puede recuperar',
+    test(
+        'guarda todo en caché, agrega operación pendiente y se puede recuperar',
         () async {
       final todos = [_makeTodo(1, 'Tarea offline')];
       await db.saveTodos(todos);
@@ -260,6 +262,57 @@ void main() {
 
       ops = await db.getPendingOperations();
       expect(ops, isEmpty);
+    });
+  });
+
+  group('Auth cache — offline login', () {
+    test('guarda credenciales y valida contraseña correcta', () async {
+      final user = User(
+        id: 1,
+        username: 'anyel',
+        name: 'Anyel',
+        createdAt: DateTime(2024, 1, 1),
+        updatedAt: DateTime(2024, 1, 1),
+      );
+
+      await db.cacheAuthCredentials(
+        username: 'anyel',
+        password: '1234',
+        userJson: user.toJson(),
+      );
+
+      final valid = await db.validateCachedPassword('anyel', '1234');
+      final invalid = await db.validateCachedPassword('anyel', 'xxxx');
+      final cachedUser = await db.getCachedUserJson('anyel');
+
+      expect(valid, isTrue);
+      expect(invalid, isFalse);
+      expect(cachedUser, isNotNull);
+      expect(cachedUser!['username'], 'anyel');
+    });
+
+    test('updateCachedPassword actualiza la contraseña en caché', () async {
+      final user = User(
+        id: 2,
+        username: 'alexis',
+        name: 'Alexis',
+        createdAt: DateTime(2024, 1, 1),
+        updatedAt: DateTime(2024, 1, 1),
+      );
+
+      await db.cacheAuthCredentials(
+        username: 'alexis',
+        password: 'old-pass',
+        userJson: user.toJson(),
+      );
+
+      await db.updateCachedPassword('alexis', 'new-pass');
+
+      final oldValid = await db.validateCachedPassword('alexis', 'old-pass');
+      final newValid = await db.validateCachedPassword('alexis', 'new-pass');
+
+      expect(oldValid, isFalse);
+      expect(newValid, isTrue);
     });
   });
 }

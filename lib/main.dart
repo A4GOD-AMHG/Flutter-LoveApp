@@ -1,22 +1,38 @@
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'services/storage_service.dart';
 import 'services/sync_service.dart';
+import 'services/notification_service.dart';
 import 'utils/theme_controller.dart';
 import 'widgets/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'widgets/layout_widget.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+  _initializeDatabaseFactory();
+  await NotificationService.instance.initialize();
 
   GoogleFonts.config.allowRuntimeFetching = false;
 
   SyncService.instance.startListening();
 
   runApp(MyRoot());
+}
+
+void _initializeDatabaseFactory() {
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
 }
 
 class MyRoot extends StatefulWidget {
