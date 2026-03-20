@@ -23,6 +23,8 @@ dependencies:
   sqflite: ^2.3.3
   sqflite_common_ffi: ^2.3.3+1
   flutter_local_notifications: ^17.2.2
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.6
   path: ^1.9.0
   connectivity_plus: ^6.1.1
 

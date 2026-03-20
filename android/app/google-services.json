@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "645227999805",
+    "project_id": "loveapp-aa",
+    "storage_bucket": "loveapp-aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:645227999805:android:9fe4457e2f2423d5e5b054",
+        "android_client_info": {
+          "package_name": "loveapp.flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtfLhlIdEwx6onal4OoyM0kddqN413_mA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
