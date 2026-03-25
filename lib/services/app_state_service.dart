@@ -6,10 +6,10 @@ class AppStateService {
   static final AppStateService instance = AppStateService._();
 
   final ValueNotifier<int> currentTab = ValueNotifier<int>(0);
+  final ValueNotifier<int?> requestedTab = ValueNotifier<int?>(null);
   final ValueNotifier<int> unreadMessages = ValueNotifier<int>(0);
   final ValueNotifier<int> messagesVersion = ValueNotifier<int>(0);
-  final ValueNotifier<bool> isOnline =
-      ValueNotifier<bool>(true);
+  final ValueNotifier<bool> isOnline = ValueNotifier<bool>(true);
   final ValueNotifier<int> localDataResetVersion = ValueNotifier<int>(0);
 
   void setCurrentTab(int tabIndex) {
@@ -17,6 +17,16 @@ class AppStateService {
     if (tabIndex == 4) {
       resetUnreadMessages();
     }
+  }
+
+  void requestOpenTab(int tabIndex) {
+    requestedTab.value = tabIndex;
+  }
+
+  int? consumeRequestedTab() {
+    final tabIndex = requestedTab.value;
+    requestedTab.value = null;
+    return tabIndex;
   }
 
   void setOnline(bool online) {

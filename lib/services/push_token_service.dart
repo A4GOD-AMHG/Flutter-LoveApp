@@ -1,9 +1,28 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api_service.dart';
+import 'notification_service.dart';
 import 'storage_service.dart';
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+    }
+  } catch (_) {}
+
+  await NotificationService.instance.initialize();
+
+  if (message.notification == null) {
+    await NotificationService.instance.showRemoteMessageNotification(message);
+  }
+}
 
 class PushTokenService {
   PushTokenService._();
@@ -32,8 +51,19 @@ class PushTokenService {
       badge: true,
       sound: true,
     );
+    await messaging.setForegroundNotificationPresentationOptions(
+      alert: false,
+      badge: true,
+      sound: true,
+    );
 
-    FirebaseMessaging.onMessage.listen((_) {});
+    FirebaseMessaging.onMessage.listen((message) async {
+      await NotificationService.instance.showRemoteMessageNotification(message);
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((message) async {
+      await NotificationService.instance.handleRemoteMessageTap(message);
+    });
 
     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
       await _storage.savePushToken(newToken);
@@ -43,6 +73,11 @@ class PushTokenService {
     final token = await messaging.getToken();
     if (token != null && token.isNotEmpty) {
       await _storage.savePushToken(token);
+    }
+
+    final initialMessage = await messaging.getInitialMessage();
+    if (initialMessage != null) {
+      await NotificationService.instance.handleRemoteMessageTap(initialMessage);
     }
 
     _initialized = true;
