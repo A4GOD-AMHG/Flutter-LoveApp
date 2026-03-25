@@ -425,10 +425,13 @@ class _TasksScreenState extends State<TasksScreen> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text('Eliminar'),
+              child: const Text(
+                'Eliminar',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
-        );
+      );
       },
     );
 
@@ -770,12 +773,12 @@ class _TasksScreenState extends State<TasksScreen> {
                       Text(
                         "Enviando...",
                         style:
-                            TextStyle(color: textColor.withValues(alpha: 0.6)),
+                            TextStyle(color: Colors.white.withValues(alpha: 0.7)),
                       ),
                       Icon(
                         Icons.schedule,
                         size: 14,
-                        color: textColor.withValues(alpha: 0.6),
+                        color: Colors.white.withValues(alpha: 0.7),
                       ),
                     ],
                   )

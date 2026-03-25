@@ -901,12 +901,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
         children: [
           Text(
             "Enviando...",
-            style: TextStyle(color: textColor.withValues(alpha: 0.6)),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
           ),
           Icon(
             Icons.schedule,
             size: 14,
-            color: textColor.withValues(alpha: 0.6),
+            color: Colors.white.withValues(alpha: 0.7),
           ),
         ],
       );
