@@ -22,13 +22,16 @@ class MessagesScreen extends StatefulWidget {
   State<MessagesScreen> createState() => _MessagesScreenState();
 }
 
-class _MessagesScreenState extends State<MessagesScreen> {
+class _MessagesScreenState extends State<MessagesScreen>
+    with WidgetsBindingObserver {
   static const int _conversationLimit = 100;
+  static const double _composerMinHeight = 88;
 
   final ApiService _apiService = ApiService();
   final StorageService _storage = StorageService();
   final DatabaseService _db = DatabaseService();
   final TextEditingController _messageController = TextEditingController();
+  final FocusNode _messageFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 
   List<Message> _messages = [];
@@ -51,7 +54,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
+    _messageFocusNode.addListener(_handleComposerFocusChange);
     _syncSub = SyncService.instance.onSyncComplete.listen((_) {
       _loadMessages();
     });
@@ -71,6 +76,14 @@ class _MessagesScreenState extends State<MessagesScreen> {
     await _loadMessages();
   }
 
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (_messageFocusNode.hasFocus) {
+      _scheduleScrollToBottom();
+    }
+  }
+
   void _handleTabChange() {
     if (AppStateService.instance.currentTab.value == 4) {
       _markAllVisibleAsRead();
@@ -88,6 +101,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
       _currentPage = 1;
       _authBannerState = _AuthBannerState.hidden;
     });
+  }
+
+  void _handleComposerFocusChange() {
+    if (_messageFocusNode.hasFocus) {
+      _scheduleScrollToBottom();
+    }
   }
 
   void _applyRealtimeEvent(ChatRealtimeEvent event) {
@@ -464,6 +483,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+  void _scheduleScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollToBottom();
+    });
+  }
+
   Future<void> _sendMessage() async {
     if (_messageController.text.trim().isEmpty) return;
 
@@ -530,6 +556,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _syncSub?.cancel();
     _realtimeSub?.cancel();
     _bannerTimer?.cancel();
@@ -541,6 +568,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
           .removeListener(_localDataResetListener!);
     }
     _scrollController.removeListener(_onScroll);
+    _messageFocusNode.removeListener(_handleComposerFocusChange);
+    _messageFocusNode.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -552,142 +581,163 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final isDark = themeController.isDark;
     final textColor = isDark ? Colors.white : Colors.black87;
     final cardColor = isDark ? const Color(0xFF2d2640) : Colors.white;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final listBottomPadding =
+        16.0 + _composerMinHeight + (keyboardInset > 0 ? 12 : 0);
 
-    return Column(
-      children: [
-        const Header(),
-        _buildAuthBanner(),
-        Expanded(
-          child: _isLoading
-              ? Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(textColor),
-                  ),
-                )
-              : _messages.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '💬',
-                            style: const TextStyle(fontSize: 64),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No hay mensajes aún',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: textColor.withValues(alpha: 0.7),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Escribe algo para comenzar la conversación',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: textColor.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _messages.length +
-                          (_isLoadingMore || _hasMoreMessages ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == 0 &&
-                            (_isLoadingMore || _hasMoreMessages)) {
-                          return _buildLoadingIndicator(textColor);
-                        }
-
-                        final messageIndex =
-                            (_isLoadingMore || _hasMoreMessages)
-                                ? index - 1
-                                : index;
-                        final message = _messages[messageIndex];
-                        final isMe = message.senderId == _currentUserId;
-
-                        final showDateSeparator = messageIndex == 0 ||
-                            !_isSameDay(_messages[messageIndex - 1].createdAt,
-                                message.createdAt);
-
-                        return Column(
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: Column(
+        children: [
+          const Header(),
+          _buildAuthBanner(),
+          Expanded(
+            child: _isLoading
+                ? Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(textColor),
+                    ),
+                  )
+                : _messages.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if (showDateSeparator)
-                              _buildDateSeparator(message.createdAt, textColor),
-                            _buildMessageBubble(
-                              context,
-                              message,
-                              isMe,
-                              textColor,
-                              cardColor,
+                            Text(
+                              '💬',
+                              style: const TextStyle(fontSize: 64),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No hay mensajes aún',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: textColor.withValues(alpha: 0.7),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Escribe algo para comenzar la conversación',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: textColor.withValues(alpha: 0.5),
+                              ),
                             ),
                           ],
-                        );
-                      },
-                    ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF0d0818) : const Color(0xFFE8E8E8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                offset: const Offset(0, -2),
-              ),
-            ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          16,
+                          16,
+                          listBottomPadding,
+                        ),
+                        itemCount: _messages.length +
+                            (_isLoadingMore || _hasMoreMessages ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == 0 &&
+                              (_isLoadingMore || _hasMoreMessages)) {
+                            return _buildLoadingIndicator(textColor);
+                          }
+
+                          final messageIndex =
+                              (_isLoadingMore || _hasMoreMessages)
+                                  ? index - 1
+                                  : index;
+                          final message = _messages[messageIndex];
+                          final isMe = message.senderId == _currentUserId;
+
+                          final showDateSeparator = messageIndex == 0 ||
+                              !_isSameDay(_messages[messageIndex - 1].createdAt,
+                                  message.createdAt);
+
+                          return Column(
+                            children: [
+                              if (showDateSeparator)
+                                _buildDateSeparator(
+                                  message.createdAt,
+                                  textColor,
+                                ),
+                              _buildMessageBubble(
+                                context,
+                                message,
+                                isMe,
+                                textColor,
+                                cardColor,
+                              ),
+                            ],
+                          );
+                        },
+                      ),
           ),
-          padding: const EdgeInsets.all(16),
-          child: SafeArea(
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    style: TextStyle(color: textColor),
-                    maxLines: null,
-                    decoration: InputDecoration(
-                      hintText: 'Escribe un mensaje...',
-                      hintStyle: TextStyle(
-                        color: textColor.withValues(alpha: 0.5),
-                      ),
-                      filled: true,
-                      fillColor:
-                          isDark ? const Color(0xFF1a1625) : Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF9B59B6), Color(0xFF8E44AD)],
-                    ),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.white),
-                    onPressed: _sendMessage,
-                  ),
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0d0818) : const Color(0xFFE8E8E8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, -2),
                 ),
               ],
             ),
+            padding: const EdgeInsets.all(16),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      focusNode: _messageFocusNode,
+                      style: TextStyle(color: textColor),
+                      maxLines: null,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: 'Escribe un mensaje...',
+                        hintStyle: TextStyle(
+                          color: textColor.withValues(alpha: 0.5),
+                        ),
+                        filled: true,
+                        fillColor:
+                            isDark ? const Color(0xFF1a1625) : Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                      onTap: _scheduleScrollToBottom,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF9B59B6), Color(0xFF8E44AD)],
+                      ),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.send, color: Colors.white),
+                      onPressed: _sendMessage,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

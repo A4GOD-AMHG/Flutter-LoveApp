@@ -431,7 +431,7 @@ class _TasksScreenState extends State<TasksScreen> {
               ),
             ),
           ],
-      );
+        );
       },
     );
 
@@ -772,8 +772,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     children: [
                       Text(
                         "Enviando...",
-                        style:
-                            TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7)),
                       ),
                       Icon(
                         Icons.schedule,

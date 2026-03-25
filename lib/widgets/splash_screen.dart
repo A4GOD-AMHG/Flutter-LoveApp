@@ -30,7 +30,16 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuth() async {
-    final isLoggedIn = await _storage.isLoggedIn();
+    bool isLoggedIn = false;
+    try {
+      isLoggedIn = await _storage
+          .isLoggedIn()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false);
+    } catch (_) {
+      isLoggedIn = false;
+    }
+
+    if (!mounted) return;
     setState(() {
       _isLoggedIn = isLoggedIn;
       _isChecking = false;

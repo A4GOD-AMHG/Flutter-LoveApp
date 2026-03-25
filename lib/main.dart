@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,21 +20,37 @@ Future<void> main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
+  GoogleFonts.config.allowRuntimeFetching = false;
+  _initializeDatabaseFactory();
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
 
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  _initializeDatabaseFactory();
-  await NotificationService.instance.initialize();
-  await PushTokenService.instance.initialize();
-
-  GoogleFonts.config.allowRuntimeFetching = false;
-
-  SyncService.instance.startListening();
-
   runApp(MyRoot());
+  unawaited(_initializeBackgroundServices());
+  unawaited(_removeNativeSplashFallback());
+}
+
+Future<void> _initializeBackgroundServices() async {
+  try {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  } catch (_) {}
+
+  await _safeInitialize(NotificationService.instance.initialize);
+  await _safeInitialize(PushTokenService.instance.initialize);
+  SyncService.instance.startListening();
+}
+
+Future<void> _safeInitialize(Future<void> Function() initializer) async {
+  try {
+    await initializer().timeout(const Duration(seconds: 6));
+  } catch (_) {}
+}
+
+Future<void> _removeNativeSplashFallback() async {
+  await Future<void>.delayed(const Duration(seconds: 4));
+  FlutterNativeSplash.remove();
 }
 
 void _initializeDatabaseFactory() {
@@ -94,9 +112,14 @@ class _MyRootState extends State<MyRoot> {
   }
 
   Future<void> _initializeApp() async {
-    final isDark = await _storage.getThemeMode();
-    final isLoggedIn = await _storage.isLoggedIn();
+    final isDark = await _storage
+        .getThemeMode()
+        .timeout(const Duration(seconds: 3), onTimeout: () => null);
+    final isLoggedIn = await _storage
+        .isLoggedIn()
+        .timeout(const Duration(seconds: 3), onTimeout: () => false);
 
+    if (!mounted) return;
     setState(() {
       if (isDark != null) {
         _controller.setMode(isDark ? ThemeMode.dark : ThemeMode.light);
@@ -105,7 +128,11 @@ class _MyRootState extends State<MyRoot> {
     });
 
     if (isLoggedIn) {
-      await PushTokenService.instance.syncTokenWithBackend();
+      unawaited(
+        PushTokenService.instance
+            .syncTokenWithBackend()
+            .timeout(const Duration(seconds: 6), onTimeout: () {}),
+      );
     }
   }
 
