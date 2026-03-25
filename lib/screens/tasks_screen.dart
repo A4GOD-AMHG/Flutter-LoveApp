@@ -10,6 +10,7 @@ import '../models/todo.dart';
 import '../models/user.dart';
 
 enum _ConnectionStatus { online, offline }
+
 enum _AuthBannerState { hidden, reconnecting, online, sessionExpired }
 
 class TasksScreen extends StatefulWidget {
@@ -115,7 +116,8 @@ class _TasksScreenState extends State<TasksScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar tareas: $e', style: TextStyle(color: Colors.white)),
+            content: Text('Error al cargar tareas: $e',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -221,9 +223,11 @@ class _TasksScreenState extends State<TasksScreen> {
                 style: TextStyle(color: textColor),
                 decoration: InputDecoration(
                   labelText: 'Título',
-                  labelStyle: TextStyle(color: textColor.withValues(alpha: 0.7)),
+                  labelStyle:
+                      TextStyle(color: textColor.withValues(alpha: 0.7)),
                   enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: textColor.withValues(alpha: 0.3)),
+                    borderSide:
+                        BorderSide(color: textColor.withValues(alpha: 0.3)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: textColor),
@@ -237,9 +241,11 @@ class _TasksScreenState extends State<TasksScreen> {
                 style: TextStyle(color: textColor),
                 decoration: InputDecoration(
                   labelText: 'Descripción',
-                  labelStyle: TextStyle(color: textColor.withValues(alpha: 0.7)),
+                  labelStyle:
+                      TextStyle(color: textColor.withValues(alpha: 0.7)),
                   enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: textColor.withValues(alpha: 0.3)),
+                    borderSide:
+                        BorderSide(color: textColor.withValues(alpha: 0.3)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: textColor),
@@ -296,7 +302,8 @@ class _TasksScreenState extends State<TasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Tarea guardada. Se enviará cuando tengas conexión.', style: TextStyle(color: Colors.white)),
+            content: Text('Tarea guardada. Se enviará cuando tengas conexión.',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.orange,
           ),
         );
@@ -305,7 +312,8 @@ class _TasksScreenState extends State<TasksScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al crear tarea: $e', style: TextStyle(color: Colors.white)),
+            content: Text('Error al crear tarea: $e',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -325,7 +333,8 @@ class _TasksScreenState extends State<TasksScreen> {
     }
 
     try {
-      final updated = await _apiService.updateTodoStatus(todo.id, !currentStatus);
+      final updated =
+          await _apiService.updateTodoStatus(todo.id, !currentStatus);
       if (mounted) {
         setState(() {
           final idx = _todos.indexWhere((t) => t.id == todo.id);
@@ -336,7 +345,8 @@ class _TasksScreenState extends State<TasksScreen> {
         });
       }
     } on OfflineException {
-      await SyncService.instance.enqueueTodoStatusUpdate(todo.id, !currentStatus);
+      await SyncService.instance
+          .enqueueTodoStatusUpdate(todo.id, !currentStatus);
       if (mounted) {
         final optimistic = Todo(
           id: todo.id,
@@ -344,8 +354,9 @@ class _TasksScreenState extends State<TasksScreen> {
           description: todo.description,
           creatorId: todo.creatorId,
           creatorUsername: todo.creatorUsername,
-          completedAnyel:
-              _currentUser?.username == 'anyel' ? !currentStatus : todo.completedAnyel,
+          completedAnyel: _currentUser?.username == 'anyel'
+              ? !currentStatus
+              : todo.completedAnyel,
           completedAlexis: _currentUser?.username == 'anyel'
               ? todo.completedAlexis
               : !currentStatus,
@@ -362,7 +373,8 @@ class _TasksScreenState extends State<TasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cambio guardado. Se enviará cuando tengas conexión.', style: TextStyle(color: Colors.white)),
+            content: Text('Cambio guardado. Se enviará cuando tengas conexión.',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.orange,
           ),
         );
@@ -371,7 +383,8 @@ class _TasksScreenState extends State<TasksScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', ''), style: TextStyle(color: Colors.white)),
+            content: Text(e.toString().replaceFirst('Exception: ', ''),
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -400,7 +413,8 @@ class _TasksScreenState extends State<TasksScreen> {
               onPressed: () => Navigator.pop(context, false),
               style: TextButton.styleFrom(
                 foregroundColor: textColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
               child: Text('Cancelar', style: TextStyle(color: textColor)),
             ),
@@ -408,7 +422,8 @@ class _TasksScreenState extends State<TasksScreen> {
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
               child: const Text('Eliminar'),
             ),
@@ -440,7 +455,9 @@ class _TasksScreenState extends State<TasksScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Eliminación pendiente. Se aplicará cuando tengas conexión.', style: TextStyle(color: Colors.white)),
+            content: Text(
+                'Eliminación pendiente. Se aplicará cuando tengas conexión.',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.orange,
           ),
         );
@@ -449,7 +466,8 @@ class _TasksScreenState extends State<TasksScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al eliminar: $e', style: TextStyle(color: Colors.white)),
+            content: Text('Error al eliminar: $e',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -498,9 +516,13 @@ class _TasksScreenState extends State<TasksScreen> {
                     },
                     items: const [
                       DropdownMenuItem(value: 'all', child: Text('📋 Todas')),
-                      DropdownMenuItem(value: 'completed', child: Text('✅ Completadas')),
-                      DropdownMenuItem(value: 'incompleted', child: Text('⏳ Pendientes')),
-                      DropdownMenuItem(value: 'completed_by_me', child: Text('🎯 Mis Completadas')),
+                      DropdownMenuItem(
+                          value: 'completed', child: Text('✅ Completadas')),
+                      DropdownMenuItem(
+                          value: 'incompleted', child: Text('⏳ Pendientes')),
+                      DropdownMenuItem(
+                          value: 'completed_by_me',
+                          child: Text('🎯 Mis Completadas')),
                     ],
                   ),
                 ),
@@ -516,8 +538,10 @@ class _TasksScreenState extends State<TasksScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color.fromARGB(255, 130, 28, 170),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
@@ -536,7 +560,8 @@ class _TasksScreenState extends State<TasksScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.check_circle_outline,
-                              size: 64, color: textColor.withValues(alpha: 0.5)),
+                              size: 64,
+                              color: textColor.withValues(alpha: 0.5)),
                           const SizedBox(height: 16),
                           Text(
                             'No hay tareas',
@@ -636,7 +661,8 @@ class _TasksScreenState extends State<TasksScreen> {
     final userId = _currentUser?.id;
     bool isCompletedByMe = false;
     if (userId != null) {
-      isCompletedByMe = userId == 1 ? todo.completedAnyel : todo.completedAlexis;
+      isCompletedByMe =
+          userId == 1 ? todo.completedAnyel : todo.completedAlexis;
     }
 
     final canDelete = todo.creatorId == userId || isPending;
@@ -652,15 +678,6 @@ class _TasksScreenState extends State<TasksScreen> {
           children: [
             Row(
               children: [
-                if (isPending)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Icon(
-                      Icons.schedule,
-                      size: 18,
-                      color: Colors.purpleAccent.shade100,
-                    ),
-                  ),
                 Expanded(
                   child: Text(
                     todo.title,
@@ -670,7 +687,8 @@ class _TasksScreenState extends State<TasksScreen> {
                       color: isCompletedByMe
                           ? textColor.withValues(alpha: 0.5)
                           : textColor,
-                      decoration: isCompletedByMe ? TextDecoration.lineThrough : null,
+                      decoration:
+                          isCompletedByMe ? TextDecoration.lineThrough : null,
                       decorationThickness: isCompletedByMe ? 2.5 : null,
                       decorationColor: isCompletedByMe ? Colors.red : null,
                     ),
@@ -683,34 +701,13 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                 Checkbox(
                   value: isCompletedByMe,
-                  onChanged:
-                      (isPending || todo.isCompleted) ? null : (_) => _toggleTodo(todo),
+                  onChanged: (isPending || todo.isCompleted)
+                      ? null
+                      : (_) => _toggleTodo(todo),
                 ),
               ],
             ),
-            if (isPending)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 14,
-                      color: Colors.purple[200],
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Enviando...',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.purple[200],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (!isPending && todo.description.isNotEmpty) ...[
+            if (todo.description.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 todo.description,
@@ -720,55 +717,70 @@ class _TasksScreenState extends State<TasksScreen> {
                 ),
               ),
             ],
-            if (!isPending) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    'Por: ${todo.creatorUsername}',
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'Por: ${todo.creatorUsername}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: textColor.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                _buildCompletionDot(todo.completedAnyel, 'assets/frog.png',
+                    const Color(0xFF90EE90)),
+                const SizedBox(width: 4),
+                Text(
+                  todo.completedAnyel ? '✓' : '✗',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: todo.completedAnyel ? Colors.green : Colors.grey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _buildCompletionDot(todo.completedAlexis, 'assets/duck.png',
+                    const Color(0xFFFFD700)),
+                const SizedBox(width: 4),
+                Text(
+                  todo.completedAlexis ? '✓' : '✗',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: todo.completedAlexis ? Colors.green : Colors.grey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (todo.isCompleted) ...[
+                  const SizedBox(width: 8),
+                  const Text(
+                    '🎉 Completada',
                     style: TextStyle(
                       fontSize: 12,
-                      color: textColor.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  _buildCompletionDot(
-                    todo.completedAnyel, 'assets/frog.png', const Color(0xFF90EE90)),
-                  const SizedBox(width: 4),
-                  Text(
-                    todo.completedAnyel ? '✓' : '✗',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: todo.completedAnyel ? Colors.green : Colors.grey,
+                      color: Colors.green,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  _buildCompletionDot(
-                    todo.completedAlexis, 'assets/duck.png', const Color(0xFFFFD700)),
-                  const SizedBox(width: 4),
-                  Text(
-                    todo.completedAlexis ? '✓' : '✗',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: todo.completedAlexis ? Colors.green : Colors.grey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (todo.isCompleted) ...[
-                    const SizedBox(width: 8),
-                    const Text(
-                      '🎉 Completada',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
                 ],
-              ),
-            ],
+                const Spacer(),
+                if (isPending)
+                  Row(
+                    spacing: 3,
+                    children: [
+                      Text(
+                        "Enviando...",
+                        style:
+                            TextStyle(color: textColor.withValues(alpha: 0.6)),
+                      ),
+                      Icon(
+                        Icons.schedule,
+                        size: 14,
+                        color: textColor.withValues(alpha: 0.6),
+                      ),
+                    ],
+                  )
+              ],
+            ),
           ],
         ),
       ),

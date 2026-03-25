@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
@@ -17,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen>
   final TextEditingController _passwordController = TextEditingController();
   final ApiService _apiService = ApiService();
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   late AnimationController _slideController;
@@ -112,6 +115,59 @@ class _LoginScreenState extends State<LoginScreen>
     });
   }
 
+  String _extractMessageFromText(String text) {
+    final patterns = <RegExp>[
+      RegExp(r'message\s*:\s*\\"([^\\"]+)\\"', caseSensitive: false),
+      RegExp(r'message\s*:\s*"([^"]+)"', caseSensitive: false),
+      RegExp(r'message\s*:\s*([^,}\]]+)', caseSensitive: false),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      if (match != null && match.groupCount >= 1) {
+        return match.group(1)!.trim().replaceAll(r'\"', '"');
+      }
+    }
+
+    return text;
+  }
+
+  String _extractErrorMessage(
+    Object error, {
+    String fallback = 'Error al iniciar sesión',
+  }) {
+    final raw = error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    if (raw.isEmpty) return fallback;
+
+    final withoutPrefix = raw.replaceFirst(
+      RegExp(r'^Login fallido:\s*', caseSensitive: false),
+      '',
+    );
+
+    try {
+      final decoded = jsonDecode(withoutPrefix);
+      if (decoded is Map<String, dynamic>) {
+        final message = decoded['message'];
+        if (message is String && message.isNotEmpty) {
+          return message.trim();
+        }
+        final nestedError = decoded['error'];
+        if (nestedError is String && nestedError.isNotEmpty) {
+          final nestedMessage = _extractMessageFromText(nestedError);
+          return nestedMessage == nestedError
+              ? nestedError.trim()
+              : nestedMessage.trim();
+        }
+      }
+    } catch (_) {
+      // Ignore JSON parsing errors and continue with text parsing.
+    }
+
+    final extracted = _extractMessageFromText(withoutPrefix);
+    if (extracted.isNotEmpty) return extracted;
+    return fallback;
+  }
+
   Future<void> _login() async {
     if (_passwordController.text.isEmpty) {
       setState(() {
@@ -135,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } catch (e) {
-      final error = e.toString().replaceFirst('Exception: ', '');
+      final error = _extractErrorMessage(e);
       setState(() {
         _errorMessage = error.contains('Inicio de sesión fallido')
             ? 'Contraseña incorrecta'
@@ -171,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen>
                 child: Padding(
                   padding: const EdgeInsets.only(right: 8, top: 8),
                   child: ServerConfigCog(
-                    iconColor: textColor.withOpacity(0.7),
+                    iconColor: textColor.withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -202,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen>
                         'Bienvenidos',
                         style: TextStyle(
                           fontSize: 18,
-                          color: textColor.withOpacity(0.7),
+                          color: textColor.withValues(alpha: 0.7),
                         ),
                       ),
                       const SizedBox(height: 48),
@@ -253,16 +309,16 @@ class _LoginScreenState extends State<LoginScreen>
                                     shape: BoxShape.circle,
                                     color: selectedUser == 'anyel'
                                         ? const Color(0xFF90EE90)
-                                            .withOpacity(0.3)
+                                            .withValues(alpha: 0.3)
                                         : const Color(0xFFFFD700)
-                                            .withOpacity(0.3),
+                                            .withValues(alpha: 0.3),
                                     boxShadow: [
                                       BoxShadow(
                                         color: selectedUser == 'anyel'
                                             ? const Color(0xFF90EE90)
-                                                .withOpacity(0.5)
+                                                .withValues(alpha: 0.5)
                                             : const Color(0xFFFFD700)
-                                                .withOpacity(0.5),
+                                                .withValues(alpha: 0.5),
                                         blurRadius: 20,
                                         spreadRadius: 5,
                                       ),
@@ -302,13 +358,20 @@ class _LoginScreenState extends State<LoginScreen>
                               children: [
                                 TextField(
                                   controller: _passwordController,
-                                  obscureText: true,
+                                  obscureText: _obscurePassword,
                                   enabled: !_isLoading,
                                   style: TextStyle(color: textColor),
+                                  onChanged: (_) {
+                                    if (_errorMessage != null) {
+                                      setState(() {
+                                        _errorMessage = null;
+                                      });
+                                    }
+                                  },
                                   decoration: InputDecoration(
                                     hintText: 'Contraseña',
                                     hintStyle: TextStyle(
-                                      color: textColor.withOpacity(0.5),
+                                      color: textColor.withValues(alpha: 0.5),
                                     ),
                                     filled: true,
                                     fillColor: cardColor,
@@ -318,7 +381,23 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                     prefixIcon: Icon(
                                       Icons.lock_outline,
-                                      color: textColor.withOpacity(0.7),
+                                      color: textColor.withValues(alpha: 0.7),
+                                    ),
+                                    suffixIcon: IconButton(
+                                      onPressed: _isLoading
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _obscurePassword =
+                                                    !_obscurePassword;
+                                              });
+                                            },
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.remove_red_eye_outlined,
+                                        color: textColor.withValues(alpha: 0.7),
+                                      ),
                                     ),
                                   ),
                                   onSubmitted: (_) => _login(),
@@ -337,14 +416,14 @@ class _LoginScreenState extends State<LoginScreen>
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: OutlinedButton(
+                                      child: ElevatedButton(
                                         onPressed: _isLoading ? null : _back,
-                                        style: OutlinedButton.styleFrom(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: cardColor,
+                                          foregroundColor: textColor,
+                                          elevation: 0,
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 16,
-                                          ),
-                                          side: BorderSide(
-                                            color: textColor.withOpacity(0.3),
                                           ),
                                           shape: RoundedRectangleBorder(
                                             borderRadius:
@@ -354,7 +433,6 @@ class _LoginScreenState extends State<LoginScreen>
                                         child: Text(
                                           'Atrás',
                                           style: TextStyle(
-                                            color: textColor,
                                             fontSize: 16,
                                           ),
                                         ),
@@ -450,14 +528,14 @@ class _LoginScreenState extends State<LoginScreen>
                     height: 100,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: color.withOpacity(0.3),
+                      color: color.withValues(alpha: 0.3),
                       border: Border.all(
                         color: color,
                         width: 3,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: color.withOpacity(0.4),
+                          color: color.withValues(alpha: 0.4),
                           blurRadius: 15,
                           spreadRadius: 3,
                         ),

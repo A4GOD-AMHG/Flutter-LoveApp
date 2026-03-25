@@ -12,6 +12,7 @@ import '../models/message.dart';
 import '../models/user.dart';
 
 enum _ConnectionStatus { online, offline }
+
 enum _AuthBannerState { hidden, reconnecting, online, sessionExpired }
 
 class MessagesScreen extends StatefulWidget {
@@ -22,6 +23,8 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
+  static const int _conversationLimit = 100;
+
   final ApiService _apiService = ApiService();
   final StorageService _storage = StorageService();
   final DatabaseService _db = DatabaseService();
@@ -41,7 +44,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
   VoidCallback? _tabListener;
   VoidCallback? _localDataResetListener;
   Timer? _bannerTimer;
-
   int _currentPage = 1;
   bool _hasMoreMessages = true;
   bool _isLoadingMore = false;
@@ -149,7 +151,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _authBannerState == _AuthBannerState.reconnecting ||
         _authBannerState == _AuthBannerState.sessionExpired;
     try {
-      final messages = await _apiService.getConversation(page: 1, perPage: 10);
+      final messages = await _apiService.getConversation(
+        page: 1,
+        perPage: _conversationLimit,
+      );
       final pendingIds = messages
           .where((m) => m.status == 'pending' || m.id < 0)
           .map((m) => m.id)
@@ -161,7 +166,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ..addAll(pendingIds);
         _isLoading = false;
         _currentPage = 1;
-        _hasMoreMessages = messages.length == 10;
+        _hasMoreMessages = messages.length == _conversationLimit;
+        _isLoadingMore = false;
         _connectionStatus = _ConnectionStatus.online;
       });
       if (shouldShowOnline) {
@@ -192,7 +198,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ..clear()
           ..addAll(pendingIds);
         _isLoading = false;
+        _currentPage = 1;
         _hasMoreMessages = false;
+        _isLoadingMore = false;
         _connectionStatus = _ConnectionStatus.offline;
         _authBannerState = _AuthBannerState.hidden;
       });
@@ -210,7 +218,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar mensajes: $e', style: TextStyle(color: Colors.white)),
+            content: Text('Error al cargar mensajes: $e',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -226,7 +235,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
 
     try {
-      final messages = await _apiService.getConversation(page: 1, perPage: 10);
+      final messages = await _apiService.getConversation(
+        page: 1,
+        perPage: _conversationLimit,
+      );
       final pendingIds = messages
           .where((m) => m.status == 'pending' || m.id < 0)
           .map((m) => m.id)
@@ -239,7 +251,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ..addAll(pendingIds);
           _isLoading = false;
           _currentPage = 1;
-          _hasMoreMessages = messages.length == 10;
+          _hasMoreMessages = messages.length == _conversationLimit;
+          _isLoadingMore = false;
           _connectionStatus = _ConnectionStatus.online;
         });
         _showOnlineBanner();
@@ -260,7 +273,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ..clear()
             ..addAll(pendingIds);
           _isLoading = false;
+          _currentPage = 1;
           _hasMoreMessages = false;
+          _isLoadingMore = false;
           _connectionStatus = _ConnectionStatus.online;
           _authBannerState = _AuthBannerState.sessionExpired;
         });
@@ -281,7 +296,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ..clear()
             ..addAll(pendingIds);
           _isLoading = false;
+          _currentPage = 1;
           _hasMoreMessages = false;
+          _isLoadingMore = false;
           _connectionStatus = _ConnectionStatus.offline;
           _authBannerState = _AuthBannerState.hidden;
         });
@@ -302,7 +319,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ..clear()
             ..addAll(pendingIds);
           _isLoading = false;
+          _currentPage = 1;
           _hasMoreMessages = false;
+          _isLoadingMore = false;
           _authBannerState = _AuthBannerState.sessionExpired;
         });
         AppStateService.instance.setOnline(false);
@@ -338,54 +357,42 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (_isLoadingMore || !_hasMoreMessages) return;
 
     setState(() => _isLoadingMore = true);
-
-    final scrollOffset = _scrollController.offset;
+    final previousOffset = _scrollController.offset;
 
     try {
       final messages = await _apiService.getConversation(
         page: _currentPage + 1,
-        perPage: 10,
+        perPage: _conversationLimit,
       );
 
-      if (mounted) {
-        final prevExtent = _scrollController.hasClients
-            ? _scrollController.position.maxScrollExtent
-            : 0.0;
-        setState(() {
-          _currentPage++;
-          _hasMoreMessages = messages.length == 10;
-          _messages.insertAll(0, messages.reversed);
-        });
-        await Future.delayed(const Duration(milliseconds: 100));
-        if (_scrollController.hasClients) {
-          final newExtent = _scrollController.position.maxScrollExtent;
-          final delta = newExtent - prevExtent;
-          final target = scrollOffset + delta;
-          _scrollController.jumpTo(target.clamp(
-            _scrollController.position.minScrollExtent,
-            _scrollController.position.maxScrollExtent,
-          ));
-        }
-        if (mounted) {
-          setState(() => _isLoadingMore = false);
-        }
+      if (!mounted) return;
+      final prevExtent = _scrollController.hasClients
+          ? _scrollController.position.maxScrollExtent
+          : 0.0;
+
+      setState(() {
+        _currentPage++;
+        _hasMoreMessages = messages.length == _conversationLimit;
+        _messages.insertAll(0, messages.reversed);
+        _isLoadingMore = false;
+      });
+
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (_scrollController.hasClients) {
+        final newExtent = _scrollController.position.maxScrollExtent;
+        final delta = newExtent - prevExtent;
+        final target = previousOffset + delta;
+        _scrollController.jumpTo(target.clamp(
+          _scrollController.position.minScrollExtent,
+          _scrollController.position.maxScrollExtent,
+        ));
       }
     } catch (e) {
       if (e is AuthException) {
         await _handleAuth401Messages();
-        if (mounted) {
-          setState(() => _isLoadingMore = false);
-        }
-        return;
       }
       if (mounted) {
         setState(() => _isLoadingMore = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cargar más mensajes: $e', style: TextStyle(color: Colors.white)),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     }
   }
@@ -512,7 +519,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al enviar mensaje: $e', style: TextStyle(color: Colors.white)),
+            content: Text('Error al enviar mensaje: $e',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: Colors.red,
           ),
         );
@@ -610,13 +618,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           children: [
                             if (showDateSeparator)
                               _buildDateSeparator(message.createdAt, textColor),
-                          _buildMessageBubble(
-                            context,
-                            message,
-                            isMe,
-                            textColor,
-                            cardColor,
-                          ),
+                            _buildMessageBubble(
+                              context,
+                              message,
+                              isMe,
+                              textColor,
+                              cardColor,
+                            ),
                           ],
                         );
                       },
@@ -683,6 +691,45 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
+  Widget _buildLoadingIndicator(Color textColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: _isLoadingMore
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        textColor.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Cargando más...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: textColor.withValues(alpha: 0.65),
+                    ),
+                  ),
+                ],
+              )
+            : Text(
+                'Desliza hacia arriba para cargar más',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: textColor.withValues(alpha: 0.5),
+                ),
+              ),
+      ),
+    );
+  }
+
   Widget _buildAuthBanner() {
     if (_authBannerState == _AuthBannerState.hidden) {
       return const SizedBox.shrink();
@@ -716,8 +763,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   ) {
     final isPending = _pendingLocalIds.contains(message.id);
     final sentColor = const Color(0xFF9B59B6);
-    final pendingColor = const Color(0xFF7C4DFF);
-    final bgColor = isMe ? (isPending ? pendingColor : sentColor) : cardColor;
+    final bgColor = isMe ? sentColor : cardColor;
     final msgTextColor = isMe ? Colors.white : textColor;
 
     final displayUsername = isMe ? _currentUsername : message.sender.username;
@@ -793,27 +839,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         color: msgTextColor,
                       ),
                     ),
-                    if (isPending)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.schedule,
-                              size: 12,
-                              color: Colors.purple[100],
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Enviando...',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.purple[100],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     const SizedBox(height: 4),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -830,10 +855,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         ),
                         if (isMe)
                           _buildOutgoingStatusIcon(
-                            status: message.status,
-                            isPending: isPending,
-                            color: msgTextColor,
-                          ),
+                              status: message.status,
+                              isPending: isPending,
+                              color: msgTextColor,
+                              textColor: textColor),
                       ],
                     ),
                   ],
@@ -868,12 +893,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
     required String status,
     required bool isPending,
     required Color color,
+    required Color textColor,
   }) {
     if (isPending || status == 'pending') {
-      return Icon(
-        Icons.schedule,
-        size: 12,
-        color: Colors.purpleAccent.shade100,
+      return Row(
+        spacing: 3,
+        children: [
+          Text(
+            "Enviando...",
+            style: TextStyle(color: textColor.withValues(alpha: 0.6)),
+          ),
+          Icon(
+            Icons.schedule,
+            size: 14,
+            color: textColor.withValues(alpha: 0.6),
+          ),
+        ],
       );
     }
 
@@ -908,53 +943,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return date1.year == date2.year &&
         date1.month == date2.month &&
         date1.day == date2.day;
-  }
-
-  Widget _buildLoadingIndicator(Color textColor) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Center(
-        child: _isLoadingMore
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        textColor.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Cargando mensajes...',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: textColor.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
-              )
-            : Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: textColor.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  'Desliza hacia arriba para cargar más',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: textColor.withValues(alpha: 0.5),
-                  ),
-                ),
-              ),
-      ),
-    );
   }
 
   Widget _buildDateSeparator(DateTime date, Color textColor) {

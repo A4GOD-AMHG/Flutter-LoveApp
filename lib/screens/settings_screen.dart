@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../services/storage_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +24,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _username;
   bool _isUserLoaded = false;
 
+  String _extractErrorMessage(
+    Object error, {
+    String fallback = 'Ocurrió un error inesperado',
+  }) {
+    final raw = error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+    if (raw.isEmpty) return fallback;
+
+    final messageRegex =
+        RegExp(r'message\s*:\s*"([^"]+)"', caseSensitive: false);
+    final messageMatch = messageRegex.firstMatch(raw);
+    if (messageMatch != null && messageMatch.groupCount >= 1) {
+      return messageMatch.group(1)!.trim();
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        final message = decoded['message'];
+        if (message is String && message.isNotEmpty) {
+          return message;
+        }
+        final nestedError = decoded['error'];
+        if (nestedError is String && nestedError.isNotEmpty) {
+          final nestedMatch = messageRegex.firstMatch(nestedError);
+          if (nestedMatch != null && nestedMatch.groupCount >= 1) {
+            return nestedMatch.group(1)!.trim();
+          }
+          return nestedError;
+        }
+      }
+    } catch (_) {
+      // Ignore parsing errors and fall back to raw message.
+    }
+
+    return raw;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +78,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _changePassword() async {
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
+    String? newPasswordError;
+    String? confirmPasswordError;
+    bool obscureNewPassword = true;
+    bool obscureConfirmPassword = true;
 
     final result = await showDialog<bool>(
       context: context,
@@ -48,92 +91,146 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final textColor = isDark ? Colors.white : Colors.black;
         final cardColor = isDark ? const Color(0xFF2d2640) : Colors.white;
 
-        return AlertDialog(
-          backgroundColor: cardColor,
-          title: Text('Cambiar Contraseña', style: TextStyle(color: textColor)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: newPasswordController,
-                obscureText: true,
-                style: TextStyle(color: textColor),
-                decoration: InputDecoration(
-                  labelText: 'Nueva Contraseña',
-                  labelStyle:
-                      TextStyle(color: textColor.withValues(alpha: 0.7)),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide:
-                        BorderSide(color: textColor.withValues(alpha: 0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: textColor),
-                  ),
-                  prefixIcon: Icon(Icons.lock_outline,
-                      color: textColor.withValues(alpha: 0.7)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: confirmPasswordController,
-                obscureText: true,
-                style: TextStyle(color: textColor),
-                decoration: InputDecoration(
-                  labelText: 'Confirmar Contraseña',
-                  labelStyle:
-                      TextStyle(color: textColor.withValues(alpha: 0.7)),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide:
-                        BorderSide(color: textColor.withValues(alpha: 0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: textColor),
-                  ),
-                  prefixIcon: Icon(Icons.lock_outline,
-                      color: textColor.withValues(alpha: 0.7)),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancelar', style: TextStyle(color: textColor)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (newPasswordController.text.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Ingresa una contraseña',
-                          style: TextStyle(color: Colors.white)),
-                      backgroundColor: Colors.red,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: cardColor,
+              title: Text('Cambiar Contraseña',
+                  style: TextStyle(color: textColor)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: newPasswordController,
+                    obscureText: obscureNewPassword,
+                    style: TextStyle(color: textColor),
+                    onChanged: (_) {
+                      if (newPasswordError != null) {
+                        setDialogState(() {
+                          newPasswordError = null;
+                        });
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Nueva Contraseña',
+                      errorText: newPasswordError,
+                      labelStyle:
+                          TextStyle(color: textColor.withValues(alpha: 0.7)),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide:
+                            BorderSide(color: textColor.withValues(alpha: 0.3)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: textColor),
+                      ),
+                      prefixIcon: Icon(Icons.lock_outline,
+                          color: textColor.withValues(alpha: 0.7)),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setDialogState(() {
+                            obscureNewPassword = !obscureNewPassword;
+                          });
+                        },
+                        icon: Icon(
+                          obscureNewPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: textColor.withValues(alpha: 0.7),
+                        ),
+                      ),
                     ),
-                  );
-                  return;
-                }
-                if (newPasswordController.text !=
-                    confirmPasswordController.text) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Las contraseñas no coinciden',
-                          style: TextStyle(color: Colors.white)),
-                      backgroundColor: Colors.red,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: obscureConfirmPassword,
+                    style: TextStyle(color: textColor),
+                    onChanged: (_) {
+                      if (confirmPasswordError != null) {
+                        setDialogState(() {
+                          confirmPasswordError = null;
+                        });
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Confirmar Contraseña',
+                      errorText: confirmPasswordError,
+                      labelStyle:
+                          TextStyle(color: textColor.withValues(alpha: 0.7)),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide:
+                            BorderSide(color: textColor.withValues(alpha: 0.3)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: textColor),
+                      ),
+                      prefixIcon: Icon(Icons.lock_outline,
+                          color: textColor.withValues(alpha: 0.7)),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setDialogState(() {
+                            obscureConfirmPassword = !obscureConfirmPassword;
+                          });
+                        },
+                        icon: Icon(
+                          obscureConfirmPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: textColor.withValues(alpha: 0.7),
+                        ),
+                      ),
                     ),
-                  );
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF9B59B6),
+                  ),
+                ],
               ),
-              child: const Text(
-                'Cambiar',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('Cancelar', style: TextStyle(color: textColor)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final newPassword = newPasswordController.text;
+                    final confirmPassword = confirmPasswordController.text;
+
+                    setDialogState(() {
+                      newPasswordError = null;
+                      confirmPasswordError = null;
+                    });
+
+                    if (newPassword.isEmpty) {
+                      setDialogState(() {
+                        newPasswordError = 'Ingresa una contraseña';
+                      });
+                      return;
+                    }
+                    if (newPassword.length <= 6) {
+                      setDialogState(() {
+                        newPasswordError =
+                            'La contraseña debe tener más de 6 caracteres';
+                      });
+                      return;
+                    }
+                    if (newPassword != confirmPassword) {
+                      setDialogState(() {
+                        confirmPasswordError = 'Las contraseñas no coinciden';
+                      });
+                      return;
+                    }
+
+                    Navigator.pop(context, true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9B59B6),
+                  ),
+                  child: const Text(
+                    'Cambiar',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -158,14 +255,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al cambiar contraseña: $e',
-                  style: TextStyle(color: Colors.white)),
+              content: Text(
+                _extractErrorMessage(e),
+                style: const TextStyle(color: Colors.white),
+              ),
               backgroundColor: Colors.red,
             ),
           );
         }
       }
     }
+
+    newPasswordController.dispose();
+    confirmPasswordController.dispose();
   }
 
   Future<void> _logout() async {
@@ -393,7 +495,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSettingTile(
                     icon: Icons.delete_forever_outlined,
                     title: 'Vaciar Datos Locales',
-                    subtitle: 'Borra datos y locales en este dispositivo',
+                    subtitle: 'Borra datos en este dispositivo',
                     onTap: _clearLocalData,
                     textColor: textColor,
                     cardColor: cardColor,

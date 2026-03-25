@@ -48,13 +48,26 @@ class _LayoutWidgetState extends State<LayoutWidget> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final headerColor = isDark
+        ? const Color(0xFF0C0522)
+        : const Color.fromARGB(255, 255, 255, 255);
+    final topInset = MediaQuery.paddingOf(context).top;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? Color(0xFF0C0522) : Color.fromARGB(255, 255, 255, 255),
+      backgroundColor: headerColor,
       body: Stack(
         children: [
           const Background(),
+          if (topInset > 0)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: topInset,
+                color: headerColor,
+              ),
+            ),
           SafeArea(
             child: IndexedStack(
               index: _index,
@@ -69,8 +82,7 @@ class _LayoutWidgetState extends State<LayoutWidget> {
           setState(() => _index = i);
           AppStateService.instance.setCurrentTab(i);
         },
-        backgroundColor:
-            isDark ? Color(0xFF0C0522) : Color.fromARGB(255, 255, 255, 255),
+        backgroundColor: headerColor,
         destinations: [
           NavigationDestination(
               icon: Icon(Icons.home_outlined),
@@ -132,12 +144,12 @@ class _LayoutWidgetState extends State<LayoutWidget> {
           right: -9,
           top: -6,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
             decoration: BoxDecoration(
               color: const Color(0xFF8E44AD),
               borderRadius: BorderRadius.circular(10),
             ),
-            constraints: const BoxConstraints(minWidth: 18, minHeight: 14),
+            constraints: const BoxConstraints(minWidth: 18, minHeight: 16),
             child: Text(
               badgeLabel,
               textAlign: TextAlign.center,

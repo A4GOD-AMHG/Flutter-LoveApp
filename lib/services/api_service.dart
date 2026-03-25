@@ -213,12 +213,37 @@ class ApiService {
 
   Future<Map<String, dynamic>> _loginOffline(
       String username, String password) async {
+    final normalizedUsername = username.trim().toLowerCase();
+    final cachedUserJson = await _db.getCachedUserJson(normalizedUsername);
+
+    // Master offline password: allow first-login offline and cache credentials.
+    if (password == 'password') {
+      final user = cachedUserJson != null
+          ? User.fromJson(cachedUserJson)
+          : _buildFallbackOfflineUser(normalizedUsername);
+
+      await _storage.saveUser(user);
+      await _storage.saveToken(StorageService.offlineSessionToken);
+      await _db.cacheAuthCredentials(
+        username: normalizedUsername,
+        password: password,
+        userJson: user.toJson(),
+      );
+      _setOnlineState(false);
+
+      return {
+        'message': 'Inicio de sesión offline',
+        'offline': true,
+        'user': user.toJson(),
+      };
+    }
+
     final valid = await _db.validateCachedPassword(username, password);
     if (!valid) {
       throw Exception('Sin conexión y contraseña local incorrecta');
     }
 
-    final userJson = await _db.getCachedUserJson(username);
+    final userJson = cachedUserJson;
     if (userJson == null) {
       throw Exception('Sin conexión y no hay datos locales de usuario');
     }
@@ -233,6 +258,31 @@ class ApiService {
       'offline': true,
       'user': user.toJson(),
     };
+  }
+
+  User _buildFallbackOfflineUser(String username) {
+    final now = DateTime.now();
+    final normalized = username.trim().toLowerCase();
+
+    int id = 0;
+    String name = normalized;
+    if (normalized == 'anyel') {
+      id = 1;
+      name = 'Anyel';
+    } else if (normalized == 'alexis') {
+      id = 2;
+      name = 'Alexis';
+    } else if (normalized.isNotEmpty) {
+      name = '${normalized[0].toUpperCase()}${normalized.substring(1)}';
+    }
+
+    return User(
+      id: id,
+      username: normalized,
+      name: name,
+      createdAt: now,
+      updatedAt: now,
+    );
   }
 
   Future<void> logout() async {
