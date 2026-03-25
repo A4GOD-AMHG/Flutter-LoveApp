@@ -22,10 +22,12 @@ class _LayoutWidgetState extends State<LayoutWidget> {
   int _index = 0;
 
   late final List<Widget> _pages;
+  VoidCallback? _requestedTabListener;
 
   @override
   void initState() {
     super.initState();
+    _index = AppStateService.instance.consumeRequestedTab() ?? 0;
     _pages = const [
       HomeScreen(),
       JourneyScreen(),
@@ -35,12 +37,28 @@ class _LayoutWidgetState extends State<LayoutWidget> {
       SettingsScreen(),
     ];
     AppStateService.instance.setCurrentTab(_index);
+    _requestedTabListener = _handleRequestedTab;
+    AppStateService.instance.requestedTab.addListener(_requestedTabListener!);
     unawaited(ChatRealtimeService.instance.connect().catchError((_) {}));
     unawaited(SyncService.instance.syncOnAppLaunch().catchError((_) {}));
   }
 
+  void _handleRequestedTab() {
+    final requestedTab = AppStateService.instance.consumeRequestedTab();
+    if (requestedTab == null || !mounted || requestedTab == _index) {
+      return;
+    }
+
+    setState(() => _index = requestedTab);
+    AppStateService.instance.setCurrentTab(requestedTab);
+  }
+
   @override
   void dispose() {
+    if (_requestedTabListener != null) {
+      AppStateService.instance.requestedTab
+          .removeListener(_requestedTabListener!);
+    }
     ChatRealtimeService.instance.disconnect();
     super.dispose();
   }
