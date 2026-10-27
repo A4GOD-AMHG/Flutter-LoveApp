@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- shortcut: refresco cada 30 min (mínimo de Android), el número puede cambiar hasta 30 min después de medianoche; usar AlarmManager si molesta. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/days_widget_description"
+    android:initialLayout="@layout/days_widget"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:previewImage="@drawable/dripping_heart"
+    android:previewLayout="@layout/days_widget"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />
