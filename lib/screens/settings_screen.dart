@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../services/storage_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
@@ -24,43 +22,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _username;
   bool _isUserLoaded = false;
 
-  String _extractErrorMessage(
-    Object error, {
-    String fallback = 'Ocurrió un error inesperado',
-  }) {
-    final raw = error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-    if (raw.isEmpty) return fallback;
-
-    final messageRegex =
-        RegExp(r'message\s*:\s*"([^"]+)"', caseSensitive: false);
-    final messageMatch = messageRegex.firstMatch(raw);
-    if (messageMatch != null && messageMatch.groupCount >= 1) {
-      return messageMatch.group(1)!.trim();
-    }
-
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) {
-        final message = decoded['message'];
-        if (message is String && message.isNotEmpty) {
-          return message;
-        }
-        final nestedError = decoded['error'];
-        if (nestedError is String && nestedError.isNotEmpty) {
-          final nestedMatch = messageRegex.firstMatch(nestedError);
-          if (nestedMatch != null && nestedMatch.groupCount >= 1) {
-            return nestedMatch.group(1)!.trim();
-          }
-          return nestedError;
-        }
-      }
-    } catch (_) {
-      // Ignore parsing errors and fall back to raw message.
-    }
-
-    return raw;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -69,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadUser() async {
     final user = await _storage.getUser();
+    if (!mounted) return;
     setState(() {
       _username = user?.username;
       _isUserLoaded = true;
@@ -256,7 +218,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                _extractErrorMessage(e),
+                '$e',
                 style: const TextStyle(color: Colors.white),
               ),
               backgroundColor: Colors.red,

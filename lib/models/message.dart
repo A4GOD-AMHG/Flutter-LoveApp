@@ -41,6 +41,20 @@ class Message {
     );
   }
 
+  Message copyWith({String? content, String? status, DateTime? updatedAt}) {
+    return Message(
+      id: id,
+      senderId: senderId,
+      receiverId: receiverId,
+      sender: sender,
+      receiver: receiver,
+      content: content ?? this.content,
+      status: status ?? this.status,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? DateTime.now(),
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

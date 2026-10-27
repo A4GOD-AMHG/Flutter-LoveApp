@@ -238,6 +238,17 @@ void main() {
       verifyNever(() => mockDb.deletePendingOperation(any()));
     });
 
+    test('se detiene en AuthException y no elimina la operación', () async {
+      final op = makeOp(id: 1);
+
+      when(() => mockDb.getPendingOperations()).thenAnswer((_) async => [op]);
+      when(() => mockApi.createTodo(any(), any())).thenThrow(AuthException());
+
+      await sync.processQueue();
+
+      verifyNever(() => mockDb.deletePendingOperation(any()));
+    });
+
     test('elimina operación con error genérico y continúa', () async {
       final ops = [
         makeOp(

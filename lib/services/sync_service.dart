@@ -7,6 +7,7 @@ import '../models/pending_operation.dart';
 import '../models/todo.dart';
 import 'api_service.dart';
 import 'app_state_service.dart';
+import 'chat_realtime_service.dart';
 import 'database_service.dart';
 
 class SyncService {
@@ -48,10 +49,7 @@ class SyncService {
         return;
       }
 
-      final isOnline = await _api.isOnline();
-      if (isOnline && !_isSyncing) {
-        await processQueue();
-      }
+      await _onBackOnline();
     });
   }
 
@@ -102,37 +100,25 @@ class SyncService {
     });
   }
 
-  Future<void> enqueuePasswordChange(
-      String username, String newPassword) async {
-    await enqueueOperation(PendingOperation.typeChangePassword, {
-      'username': username,
-      'new_password': newPassword,
-    });
-  }
-
   Future<void> processQueue() async {
     if (_isSyncing) return;
     _isSyncing = true;
 
     try {
-      final ops = await _db.getPendingOperations();
-      if (ops.isEmpty) {
-        _isSyncing = false;
-        return;
-      }
-
-      bool anySuccess = false;
-      for (final op in ops) {
+      var anySuccess = false;
+      for (final op in await _db.getPendingOperations()) {
         try {
           await _executeOperation(op);
-          await _db.deletePendingOperation(op.id!);
-          anySuccess = true;
         } on OfflineException {
           break;
+        } on AuthException {
+          // Sin sesión válida no se pierde la operación: se reintenta tras re-login.
+          break;
         } catch (_) {
-          await _db.deletePendingOperation(op.id!);
-          anySuccess = true;
+          // Error del servidor (p. ej. 4xx): la operación nunca tendrá éxito.
         }
+        await _db.deletePendingOperation(op.id!);
+        anySuccess = true;
       }
 
       if (anySuccess) {
@@ -145,16 +131,14 @@ class SyncService {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(_pollInterval, (_) async {
-      final online = await _checkConnectivity();
-      if (online && !_isSyncing) {
-        await processQueue();
-      }
-    });
+    _pollTimer = Timer.periodic(_pollInterval, (_) => _onBackOnline());
   }
 
-  Future<bool> _checkConnectivity() async {
-    return _api.isOnline();
+  /// Vacía la cola y recupera el WebSocket si se cayó mientras no había red.
+  Future<void> _onBackOnline() async {
+    if (_isSyncing || !await _api.isOnline()) return;
+    await processQueue();
+    unawaited(ChatRealtimeService.instance.connect().catchError((_) {}));
   }
 
   Future<void> syncOnAppLaunch() async {

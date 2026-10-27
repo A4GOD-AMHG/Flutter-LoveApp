@@ -153,23 +153,23 @@ class DatabaseService {
         .toList();
   }
 
+  static Map<String, Object?> _messageRow(Message msg) => {
+        'id': msg.id,
+        'sender_id': msg.senderId,
+        'receiver_id': msg.receiverId,
+        'sender_json': jsonEncode(msg.sender.toJson()),
+        'receiver_json': jsonEncode(msg.receiver.toJson()),
+        'content': msg.content,
+        'status': msg.status,
+        'created_at': msg.createdAt.toIso8601String(),
+        'updated_at': msg.updatedAt.toIso8601String(),
+      };
+
   Future<void> saveMessages(List<Message> messages) async {
     final db = await database;
     final batch = db.batch();
     for (final msg in messages) {
-      batch.insert(
-          'messages',
-          {
-            'id': msg.id,
-            'sender_id': msg.senderId,
-            'receiver_id': msg.receiverId,
-            'sender_json': jsonEncode(msg.sender.toJson()),
-            'receiver_json': jsonEncode(msg.receiver.toJson()),
-            'content': msg.content,
-            'status': msg.status,
-            'created_at': msg.createdAt.toIso8601String(),
-            'updated_at': msg.updatedAt.toIso8601String(),
-          },
+      batch.insert('messages', _messageRow(msg),
           conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
@@ -199,19 +199,7 @@ class DatabaseService {
 
   Future<void> insertMessage(Message msg) async {
     final db = await database;
-    await db.insert(
-        'messages',
-        {
-          'id': msg.id,
-          'sender_id': msg.senderId,
-          'receiver_id': msg.receiverId,
-          'sender_json': jsonEncode(msg.sender.toJson()),
-          'receiver_json': jsonEncode(msg.receiver.toJson()),
-          'content': msg.content,
-          'status': msg.status,
-          'created_at': msg.createdAt.toIso8601String(),
-          'updated_at': msg.updatedAt.toIso8601String(),
-        },
+    await db.insert('messages', _messageRow(msg),
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
@@ -303,59 +291,31 @@ class DatabaseService {
     );
   }
 
-  Future<bool> validateCachedPassword(String username, String password) async {
+  Future<Map<String, Object?>?> _authCacheRow(String username) async {
     final db = await database;
     final rows = await db.query(
       'auth_cache',
-      columns: ['password'],
       where: 'username = ?',
       whereArgs: [username.trim().toLowerCase()],
       limit: 1,
     );
+    return rows.isEmpty ? null : rows.first;
+  }
 
-    if (rows.isEmpty) return false;
-    return (rows.first['password'] as String) == password;
+  Future<bool> validateCachedPassword(String username, String password) async {
+    final row = await _authCacheRow(username);
+    return row != null && row['password'] == password;
   }
 
   Future<Map<String, dynamic>?> getCachedUserJson(String username) async {
-    final db = await database;
-    final rows = await db.query(
-      'auth_cache',
-      columns: ['user_json'],
-      where: 'username = ?',
-      whereArgs: [username.trim().toLowerCase()],
-      limit: 1,
-    );
-
-    if (rows.isEmpty) return null;
-    return jsonDecode(rows.first['user_json'] as String)
-        as Map<String, dynamic>;
+    final row = await _authCacheRow(username);
+    if (row == null) return null;
+    return jsonDecode(row['user_json'] as String) as Map<String, dynamic>;
   }
 
   Future<String?> getCachedPassword(String username) async {
-    final db = await database;
-    final rows = await db.query(
-      'auth_cache',
-      columns: ['password'],
-      where: 'username = ?',
-      whereArgs: [username.trim().toLowerCase()],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return rows.first['password'] as String?;
-  }
-
-  Future<void> updateCachedPassword(String username, String newPassword) async {
-    final db = await database;
-    await db.update(
-      'auth_cache',
-      {
-        'password': newPassword,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'username = ?',
-      whereArgs: [username.trim().toLowerCase()],
-    );
+    final row = await _authCacheRow(username);
+    return row?['password'] as String?;
   }
 
   Future<void> clearAllLocalData() async {

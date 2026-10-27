@@ -5,13 +5,12 @@ import '../services/app_state_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../widgets/connection_banner.dart';
 import '../widgets/header.dart';
 import '../models/todo.dart';
 import '../models/user.dart';
 
 enum _ConnectionStatus { online, offline }
-
-enum _AuthBannerState { hidden, reconnecting, online, sessionExpired }
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -28,7 +27,7 @@ class _TasksScreenState extends State<TasksScreen> {
   String _filter = 'all';
   User? _currentUser;
   _ConnectionStatus _connectionStatus = _ConnectionStatus.online;
-  _AuthBannerState _authBannerState = _AuthBannerState.hidden;
+  AuthBannerState _authBannerState = AuthBannerState.hidden;
   final Set<int> _pendingLocalIds = {};
   StreamSubscription<void>? _syncSub;
   VoidCallback? _localDataResetListener;
@@ -77,8 +76,7 @@ class _TasksScreenState extends State<TasksScreen> {
   Future<void> _loadTodos() async {
     setState(() => _isLoading = true);
     final shouldShowOnline = _connectionStatus == _ConnectionStatus.offline ||
-        _authBannerState == _AuthBannerState.reconnecting ||
-        _authBannerState == _AuthBannerState.sessionExpired;
+        _authBannerState == AuthBannerState.sessionExpired;
 
     try {
       final result = await _apiService.getTodos(
@@ -86,116 +84,64 @@ class _TasksScreenState extends State<TasksScreen> {
         sortOrder: 'desc',
         limit: 100,
       );
-      if (mounted) {
-        setState(() {
-          _todos = result['todos'] as List<Todo>;
-          _pendingLocalIds.clear();
-          _isLoading = false;
-          _connectionStatus = _ConnectionStatus.online;
-        });
-        if (shouldShowOnline) {
-          _showOnlineBanner();
-        }
-        AppStateService.instance.setOnline(true);
+      if (!mounted) return;
+      setState(() {
+        _todos = result['todos'] as List<Todo>;
+        _pendingLocalIds.clear();
+        _isLoading = false;
+        _connectionStatus = _ConnectionStatus.online;
+      });
+      if (shouldShowOnline) {
+        _showOnlineBanner();
       }
+      AppStateService.instance.setOnline(true);
     } on AuthException {
-      await _handleAuth401Todos();
+      // ApiService ya intentó el re-login silencioso: la sesión no es válida.
+      await _showCachedTodos(
+        online: true,
+        banner: AuthBannerState.sessionExpired,
+      );
     } on OfflineException {
-      final cached = await _apiService.getCachedTodos();
-      if (mounted) {
-        setState(() {
-          _todos = cached;
-          _isLoading = false;
-          _connectionStatus = _ConnectionStatus.offline;
-          _authBannerState = _AuthBannerState.hidden;
-        });
-        AppStateService.instance.setOnline(false);
-      }
+      await _showCachedTodos(online: false);
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cargar tareas: $e',
-                style: TextStyle(color: Colors.white)),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar tareas: $e',
+              style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  Future<void> _handleAuth401Todos() async {
-    if (mounted) {
-      setState(() {
-        _authBannerState = _AuthBannerState.reconnecting;
-      });
-    }
-
-    try {
-      final result = await _apiService.getTodos(
-        status: _filter,
-        sortOrder: 'desc',
-        limit: 100,
-      );
-      if (mounted) {
-        setState(() {
-          _todos = result['todos'] as List<Todo>;
-          _pendingLocalIds.clear();
-          _isLoading = false;
-          _connectionStatus = _ConnectionStatus.online;
-        });
-        _showOnlineBanner();
-        AppStateService.instance.setOnline(true);
-      }
-      return;
-    } on AuthException {
-      final cached = await _apiService.getCachedTodos();
-      if (mounted) {
-        setState(() {
-          _todos = cached;
-          _isLoading = false;
-          _connectionStatus = _ConnectionStatus.online;
-          _authBannerState = _AuthBannerState.sessionExpired;
-        });
-        AppStateService.instance.setOnline(true);
-      }
-      return;
-    } on OfflineException {
-      final cached = await _apiService.getCachedTodos();
-      if (mounted) {
-        setState(() {
-          _todos = cached;
-          _isLoading = false;
-          _connectionStatus = _ConnectionStatus.offline;
-          _authBannerState = _AuthBannerState.hidden;
-        });
-        AppStateService.instance.setOnline(false);
-      }
-      return;
-    } catch (_) {
-      final cached = await _apiService.getCachedTodos();
-      if (mounted) {
-        setState(() {
-          _todos = cached;
-          _isLoading = false;
-          _authBannerState = _AuthBannerState.sessionExpired;
-        });
-      }
-      return;
-    }
+  Future<void> _showCachedTodos({
+    required bool online,
+    AuthBannerState banner = AuthBannerState.hidden,
+  }) async {
+    final cached = await _apiService.getCachedTodos();
+    if (!mounted) return;
+    setState(() {
+      _todos = cached;
+      _isLoading = false;
+      _connectionStatus =
+          online ? _ConnectionStatus.online : _ConnectionStatus.offline;
+      _authBannerState = banner;
+    });
+    AppStateService.instance.setOnline(online);
   }
 
   void _showOnlineBanner() {
     if (!mounted) return;
     _bannerTimer?.cancel();
     setState(() {
-      _authBannerState = _AuthBannerState.online;
+      _authBannerState = AuthBannerState.online;
     });
     _bannerTimer = Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
       setState(() {
-        _authBannerState = _AuthBannerState.hidden;
+        _authBannerState = AuthBannerState.hidden;
       });
     });
   }
@@ -488,7 +434,7 @@ class _TasksScreenState extends State<TasksScreen> {
     return Column(
       children: [
         const Header(),
-        _buildAuthBanner(),
+        ConnectionBanner(state: _authBannerState),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -589,73 +535,6 @@ class _TasksScreenState extends State<TasksScreen> {
                     ),
         ),
       ],
-    );
-  }
-
-  Widget _buildAuthBanner() {
-    if (_authBannerState == _AuthBannerState.hidden) {
-      return const SizedBox.shrink();
-    }
-
-    if (_authBannerState == _AuthBannerState.reconnecting) {
-      return Container(
-        width: double.infinity,
-        color: Colors.orange[700],
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-        child: const Row(
-          children: [
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            ),
-            SizedBox(width: 10),
-            Text(
-              'Reconectando sesión...',
-              style: TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_authBannerState == _AuthBannerState.online) {
-      return Container(
-        width: double.infinity,
-        color: Colors.green[700],
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-        child: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 16),
-            SizedBox(width: 8),
-            Text(
-              'Conexión restablecida',
-              style: TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      width: double.infinity,
-      color: Colors.red[700],
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-      child: const Row(
-        children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Sesión expirada. Cierra sesión y vuelve a iniciar.',
-              style: TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

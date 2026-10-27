@@ -290,30 +290,6 @@ void main() {
       expect(cachedUser, isNotNull);
       expect(cachedUser!['username'], 'anyel');
     });
-
-    test('updateCachedPassword actualiza la contraseña en caché', () async {
-      final user = User(
-        id: 2,
-        username: 'alexis',
-        name: 'Alexis',
-        createdAt: DateTime(2024, 1, 1),
-        updatedAt: DateTime(2024, 1, 1),
-      );
-
-      await db.cacheAuthCredentials(
-        username: 'alexis',
-        password: 'old-pass',
-        userJson: user.toJson(),
-      );
-
-      await db.updateCachedPassword('alexis', 'new-pass');
-
-      final oldValid = await db.validateCachedPassword('alexis', 'old-pass');
-      final newValid = await db.validateCachedPassword('alexis', 'new-pass');
-
-      expect(oldValid, isFalse);
-      expect(newValid, isTrue);
-    });
   });
 }
 

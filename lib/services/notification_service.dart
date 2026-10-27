@@ -1,7 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'app_state_service.dart';
@@ -11,7 +10,7 @@ void notificationTapBackground(NotificationResponse response) {
   NotificationService.instance.handleNotificationTap(response.payload);
 }
 
-class NotificationService with WidgetsBindingObserver {
+class NotificationService {
   NotificationService._();
 
   static final NotificationService instance = NotificationService._();
@@ -22,18 +21,13 @@ class NotificationService with WidgetsBindingObserver {
       FlutterLocalNotificationsPlugin();
   final Map<String, Uint8List> _avatarCache = {};
 
-  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   bool _initialized = false;
-
-  bool get isAppInForeground => _lifecycleState == AppLifecycleState.resumed;
 
   Future<void> initialize() async {
     if (_initialized) {
       await _syncLaunchIntent();
       return;
     }
-
-    WidgetsBinding.instance.addObserver(this);
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings();
@@ -226,10 +220,5 @@ class NotificationService with WidgetsBindingObserver {
 
   String _normalizeSenderKey(String value) {
     return value.trim().toLowerCase();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    _lifecycleState = state;
   }
 }

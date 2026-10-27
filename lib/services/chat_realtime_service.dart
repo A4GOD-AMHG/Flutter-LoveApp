@@ -11,6 +11,7 @@ import 'storage_service.dart';
 class ChatRealtimeEvent {
   final String type;
   final Message? message;
+  final String? content;
   final int? messageId;
   final String? status;
   final DateTime? updatedAt;
@@ -18,6 +19,7 @@ class ChatRealtimeEvent {
   ChatRealtimeEvent({
     required this.type,
     this.message,
+    this.content,
     this.messageId,
     this.status,
     this.updatedAt,
@@ -38,13 +40,22 @@ class ChatRealtimeService {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   int? _currentUserId;
+  bool _connecting = false;
 
   bool get isConnected => _subscription != null;
   Stream<ChatRealtimeEvent> get events => _events.stream;
 
   Future<void> connect() async {
-    if (_subscription != null) return;
+    if (_subscription != null || _connecting) return;
+    _connecting = true;
+    try {
+      await _connect();
+    } finally {
+      _connecting = false;
+    }
+  }
 
+  Future<void> _connect() async {
     final token = await _storage.getToken();
     if (token == null || token == StorageService.offlineSessionToken) return;
 
@@ -66,8 +77,12 @@ class ChatRealtimeService {
         fragment: '',
       );
 
-      _channel = WebSocketChannel.connect(wsUrl);
-      _subscription = _channel!.stream.listen(
+      final channel = WebSocketChannel.connect(wsUrl);
+      // Sin esperar `ready`, un handshake fallido queda como error no capturado
+      // y el servicio se cree conectado con un canal muerto.
+      await channel.ready;
+      _channel = channel;
+      _subscription = channel.stream.listen(
         (data) async {
           try {
             final wsData = jsonDecode(data) as Map<String, dynamic>;
@@ -137,8 +152,6 @@ class ChatRealtimeService {
       case 'message_read':
         await _onMessageStatusEvent(payloadMap, 'read');
     }
-
-    AppStateService.instance.bumpMessagesVersion();
   }
 
   Future<void> _onMessageSentEvent(Map<String, dynamic> payload) async {
@@ -180,20 +193,10 @@ class ChatRealtimeService {
     if (idx < 0) return;
 
     final old = all[idx];
-    final newStatus = payload['status'] as String? ?? old.status;
-    final newUpdatedAt = payload['updated_at'] != null
-        ? DateTime.parse(payload['updated_at'] as String).toLocal()
-        : DateTime.now();
-    final updated = Message(
-      id: old.id,
-      senderId: old.senderId,
-      receiverId: old.receiverId,
-      sender: old.sender,
-      receiver: old.receiver,
-      content: old.content,
-      status: newStatus,
-      createdAt: old.createdAt,
-      updatedAt: newUpdatedAt,
+    final updated = old.copyWith(
+      content: payload['content'] as String?,
+      status: payload['status'] as String?,
+      updatedAt: _parseUpdatedAt(payload),
     );
 
     await _db.insertMessage(updated);
@@ -201,8 +204,9 @@ class ChatRealtimeService {
       ChatRealtimeEvent(
         type: 'message_updated',
         messageId: id,
-        status: newStatus,
-        updatedAt: newUpdatedAt,
+        content: updated.content,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
       ),
     );
   }
@@ -220,9 +224,7 @@ class ChatRealtimeService {
     final id = _parseMessageId(payload);
     if (id == null) return;
     final status = payload['status'] as String? ?? fallbackStatus;
-    final updatedAt = payload['updated_at'] != null
-        ? DateTime.parse(payload['updated_at'] as String).toLocal()
-        : DateTime.now();
+    final updatedAt = _parseUpdatedAt(payload);
     await _db.updateMessageStatus(id, status);
     _events.add(
       ChatRealtimeEvent(
@@ -233,6 +235,11 @@ class ChatRealtimeService {
       ),
     );
     await _refreshUnreadFromBackend();
+  }
+
+  DateTime _parseUpdatedAt(Map<String, dynamic> payload) {
+    final raw = payload['updated_at'];
+    return raw is String ? DateTime.parse(raw).toLocal() : DateTime.now();
   }
 
   int? _parseMessageId(Map<String, dynamic> payload) {

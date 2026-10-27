@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
@@ -115,59 +113,6 @@ class _LoginScreenState extends State<LoginScreen>
     });
   }
 
-  String _extractMessageFromText(String text) {
-    final patterns = <RegExp>[
-      RegExp(r'message\s*:\s*\\"([^\\"]+)\\"', caseSensitive: false),
-      RegExp(r'message\s*:\s*"([^"]+)"', caseSensitive: false),
-      RegExp(r'message\s*:\s*([^,}\]]+)', caseSensitive: false),
-    ];
-
-    for (final pattern in patterns) {
-      final match = pattern.firstMatch(text);
-      if (match != null && match.groupCount >= 1) {
-        return match.group(1)!.trim().replaceAll(r'\"', '"');
-      }
-    }
-
-    return text;
-  }
-
-  String _extractErrorMessage(
-    Object error, {
-    String fallback = 'Error al iniciar sesión',
-  }) {
-    final raw = error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-    if (raw.isEmpty) return fallback;
-
-    final withoutPrefix = raw.replaceFirst(
-      RegExp(r'^Login fallido:\s*', caseSensitive: false),
-      '',
-    );
-
-    try {
-      final decoded = jsonDecode(withoutPrefix);
-      if (decoded is Map<String, dynamic>) {
-        final message = decoded['message'];
-        if (message is String && message.isNotEmpty) {
-          return message.trim();
-        }
-        final nestedError = decoded['error'];
-        if (nestedError is String && nestedError.isNotEmpty) {
-          final nestedMessage = _extractMessageFromText(nestedError);
-          return nestedMessage == nestedError
-              ? nestedError.trim()
-              : nestedMessage.trim();
-        }
-      }
-    } catch (_) {
-      // Ignore JSON parsing errors and continue with text parsing.
-    }
-
-    final extracted = _extractMessageFromText(withoutPrefix);
-    if (extracted.isNotEmpty) return extracted;
-    return fallback;
-  }
-
   Future<void> _login() async {
     if (_passwordController.text.isEmpty) {
       setState(() {
@@ -191,11 +136,9 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } catch (e) {
-      final error = _extractErrorMessage(e);
+      if (!mounted) return;
       setState(() {
-        _errorMessage = error.contains('Inicio de sesión fallido')
-            ? 'Contraseña incorrecta'
-            : error;
+        _errorMessage = '$e';
         _isLoading = false;
       });
     }

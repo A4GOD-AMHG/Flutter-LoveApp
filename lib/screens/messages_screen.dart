@@ -7,13 +7,12 @@ import '../services/chat_realtime_service.dart';
 import '../utils/theme_controller.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../widgets/connection_banner.dart';
 import '../widgets/header.dart';
 import '../models/message.dart';
 import '../models/user.dart';
 
 enum _ConnectionStatus { online, offline }
-
-enum _AuthBannerState { hidden, reconnecting, online, sessionExpired }
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -40,7 +39,7 @@ class _MessagesScreenState extends State<MessagesScreen>
   String? _currentUsername;
   User? _currentUserFull;
   _ConnectionStatus _connectionStatus = _ConnectionStatus.online;
-  _AuthBannerState _authBannerState = _AuthBannerState.hidden;
+  AuthBannerState _authBannerState = AuthBannerState.hidden;
   final Set<int> _pendingLocalIds = {};
   StreamSubscription<void>? _syncSub;
   StreamSubscription<ChatRealtimeEvent>? _realtimeSub;
@@ -99,7 +98,7 @@ class _MessagesScreenState extends State<MessagesScreen>
       _isLoadingMore = false;
       _hasMoreMessages = false;
       _currentPage = 1;
-      _authBannerState = _AuthBannerState.hidden;
+      _authBannerState = AuthBannerState.hidden;
     });
   }
 
@@ -139,18 +138,11 @@ class _MessagesScreenState extends State<MessagesScreen>
         if (id == null || status == null) return;
         final idx = _messages.indexWhere((m) => m.id == id);
         if (idx < 0) return;
-        final old = _messages[idx];
         setState(() {
-          _messages[idx] = Message(
-            id: old.id,
-            senderId: old.senderId,
-            receiverId: old.receiverId,
-            sender: old.sender,
-            receiver: old.receiver,
-            content: old.content,
+          _messages[idx] = _messages[idx].copyWith(
+            content: event.content,
             status: status,
-            createdAt: old.createdAt,
-            updatedAt: event.updatedAt ?? DateTime.now(),
+            updatedAt: event.updatedAt,
           );
         });
     }
@@ -158,6 +150,7 @@ class _MessagesScreenState extends State<MessagesScreen>
 
   Future<void> _loadCurrentUser() async {
     final user = await _storage.getUser();
+    if (!mounted) return;
     setState(() {
       _currentUserId = user?.id;
       _currentUsername = user?.username;
@@ -167,22 +160,16 @@ class _MessagesScreenState extends State<MessagesScreen>
 
   Future<void> _loadMessages() async {
     final shouldShowOnline = _connectionStatus == _ConnectionStatus.offline ||
-        _authBannerState == _AuthBannerState.reconnecting ||
-        _authBannerState == _AuthBannerState.sessionExpired;
+        _authBannerState == AuthBannerState.sessionExpired;
     try {
       final messages = await _apiService.getConversation(
         page: 1,
         perPage: _conversationLimit,
       );
-      final pendingIds = messages
-          .where((m) => m.status == 'pending' || m.id < 0)
-          .map((m) => m.id)
-          .toSet();
+      if (!mounted) return;
       setState(() {
         _messages = messages.reversed.toList();
-        _pendingLocalIds
-          ..clear()
-          ..addAll(pendingIds);
+        _pendingLocalIds.clear();
         _isLoading = false;
         _currentPage = 1;
         _hasMoreMessages = messages.length == _conversationLimit;
@@ -197,169 +184,73 @@ class _MessagesScreenState extends State<MessagesScreen>
       if (AppStateService.instance.currentTab.value == 4) {
         await _markAllVisibleAsRead();
       }
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
-      });
+      _jumpToBottom();
     } on AuthException {
-      await _handleAuth401Messages();
+      // ApiService ya intentó el re-login silencioso: la sesión no es válida.
+      await _showCachedMessages(
+        online: true,
+        banner: AuthBannerState.sessionExpired,
+      );
     } on OfflineException {
-      final cached = await _apiService.getCachedMessages();
-      final pendingIds = cached
-          .where((m) => m.status == 'pending' || m.id < 0)
-          .map((m) => m.id)
-          .toSet();
+      await _showCachedMessages(online: false);
+      _jumpToBottom();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar mensajes: $e',
+              style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showCachedMessages({
+    required bool online,
+    AuthBannerState banner = AuthBannerState.hidden,
+  }) async {
+    final cached = await _apiService.getCachedMessages();
+    if (mounted) {
       setState(() {
         _messages = cached;
         _pendingLocalIds
           ..clear()
-          ..addAll(pendingIds);
+          ..addAll(cached
+              .where((m) => m.status == 'pending' || m.id < 0)
+              .map((m) => m.id));
         _isLoading = false;
         _currentPage = 1;
         _hasMoreMessages = false;
         _isLoadingMore = false;
-        _connectionStatus = _ConnectionStatus.offline;
-        _authBannerState = _AuthBannerState.hidden;
+        _connectionStatus =
+            online ? _ConnectionStatus.online : _ConnectionStatus.offline;
+        _authBannerState = banner;
       });
-      AppStateService.instance.setOnline(false);
-      await _syncUnreadBadge();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cargar mensajes: $e',
-                style: TextStyle(color: Colors.white)),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
+    AppStateService.instance.setOnline(online);
+    await _syncUnreadBadge();
   }
 
-  Future<void> _handleAuth401Messages() async {
-    if (mounted) {
-      setState(() {
-        _authBannerState = _AuthBannerState.reconnecting;
-      });
-    }
-
-    try {
-      final messages = await _apiService.getConversation(
-        page: 1,
-        perPage: _conversationLimit,
-      );
-      final pendingIds = messages
-          .where((m) => m.status == 'pending' || m.id < 0)
-          .map((m) => m.id)
-          .toSet();
-      if (mounted) {
-        setState(() {
-          _messages = messages.reversed.toList();
-          _pendingLocalIds
-            ..clear()
-            ..addAll(pendingIds);
-          _isLoading = false;
-          _currentPage = 1;
-          _hasMoreMessages = messages.length == _conversationLimit;
-          _isLoadingMore = false;
-          _connectionStatus = _ConnectionStatus.online;
-        });
-        _showOnlineBanner();
-        AppStateService.instance.setOnline(true);
+  void _jumpToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
       }
-      await _syncUnreadBadge();
-      return;
-    } on AuthException {
-      final cached = await _apiService.getCachedMessages();
-      final pendingIds = cached
-          .where((m) => m.status == 'pending' || m.id < 0)
-          .map((m) => m.id)
-          .toSet();
-      if (mounted) {
-        setState(() {
-          _messages = cached;
-          _pendingLocalIds
-            ..clear()
-            ..addAll(pendingIds);
-          _isLoading = false;
-          _currentPage = 1;
-          _hasMoreMessages = false;
-          _isLoadingMore = false;
-          _connectionStatus = _ConnectionStatus.online;
-          _authBannerState = _AuthBannerState.sessionExpired;
-        });
-        AppStateService.instance.setOnline(true);
-      }
-      await _syncUnreadBadge();
-      return;
-    } on OfflineException {
-      final cached = await _apiService.getCachedMessages();
-      final pendingIds = cached
-          .where((m) => m.status == 'pending' || m.id < 0)
-          .map((m) => m.id)
-          .toSet();
-      if (mounted) {
-        setState(() {
-          _messages = cached;
-          _pendingLocalIds
-            ..clear()
-            ..addAll(pendingIds);
-          _isLoading = false;
-          _currentPage = 1;
-          _hasMoreMessages = false;
-          _isLoadingMore = false;
-          _connectionStatus = _ConnectionStatus.offline;
-          _authBannerState = _AuthBannerState.hidden;
-        });
-        AppStateService.instance.setOnline(false);
-      }
-      await _syncUnreadBadge();
-      return;
-    } catch (_) {
-      final cached = await _apiService.getCachedMessages();
-      final pendingIds = cached
-          .where((m) => m.status == 'pending' || m.id < 0)
-          .map((m) => m.id)
-          .toSet();
-      if (mounted) {
-        setState(() {
-          _messages = cached;
-          _pendingLocalIds
-            ..clear()
-            ..addAll(pendingIds);
-          _isLoading = false;
-          _currentPage = 1;
-          _hasMoreMessages = false;
-          _isLoadingMore = false;
-          _authBannerState = _AuthBannerState.sessionExpired;
-        });
-        AppStateService.instance.setOnline(false);
-      }
-      await _syncUnreadBadge();
-      return;
-    }
+    });
   }
 
   void _showOnlineBanner() {
     if (!mounted) return;
     _bannerTimer?.cancel();
     setState(() {
-      _authBannerState = _AuthBannerState.online;
+      _authBannerState = AuthBannerState.online;
     });
     _bannerTimer = Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
       setState(() {
-        _authBannerState = _AuthBannerState.hidden;
+        _authBannerState = AuthBannerState.hidden;
       });
     });
   }
@@ -408,7 +299,10 @@ class _MessagesScreenState extends State<MessagesScreen>
       }
     } catch (e) {
       if (e is AuthException) {
-        await _handleAuth401Messages();
+        await _showCachedMessages(
+          online: true,
+          banner: AuthBannerState.sessionExpired,
+        );
       }
       if (mounted) {
         setState(() => _isLoadingMore = false);
@@ -434,17 +328,7 @@ class _MessagesScreenState extends State<MessagesScreen>
         _messages = _messages
             .map(
               (m) => m.senderId != _currentUserId && m.status != 'read'
-                  ? Message(
-                      id: m.id,
-                      senderId: m.senderId,
-                      receiverId: m.receiverId,
-                      sender: m.sender,
-                      receiver: m.receiver,
-                      content: m.content,
-                      status: 'read',
-                      createdAt: m.createdAt,
-                      updatedAt: DateTime.now(),
-                    )
+                  ? m.copyWith(status: 'read')
                   : m,
             )
             .toList();
@@ -592,7 +476,7 @@ class _MessagesScreenState extends State<MessagesScreen>
       child: Column(
         children: [
           const Header(),
-          _buildAuthBanner(),
+          ConnectionBanner(state: _authBannerState),
           Expanded(
             child: _isLoading
                 ? Center(
@@ -776,30 +660,6 @@ class _MessagesScreenState extends State<MessagesScreen>
                   color: textColor.withValues(alpha: 0.5),
                 ),
               ),
-      ),
-    );
-  }
-
-  Widget _buildAuthBanner() {
-    if (_authBannerState == _AuthBannerState.hidden) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      width: double.infinity,
-      color: Colors.red[700],
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-      child: const Row(
-        children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Sesión expirada. Cierra sesión y vuelve a iniciar.',
-              style: TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api_service.dart';
+import 'app_state_service.dart';
+import 'chat_realtime_service.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 
@@ -58,6 +60,13 @@ class PushTokenService {
     );
 
     FirebaseMessaging.onMessage.listen((message) async {
+      // En primer plano el WebSocket ya notifica; evita duplicados o avisar
+      // mientras la pestaña de mensajes está abierta.
+      if (ChatRealtimeService.instance.isConnected ||
+          AppStateService.instance.currentTab.value ==
+              NotificationService.messagesTabIndex) {
+        return;
+      }
       await NotificationService.instance.showRemoteMessageNotification(message);
     });
 

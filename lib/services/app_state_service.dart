@@ -8,7 +8,6 @@ class AppStateService {
   final ValueNotifier<int> currentTab = ValueNotifier<int>(0);
   final ValueNotifier<int?> requestedTab = ValueNotifier<int?>(null);
   final ValueNotifier<int> unreadMessages = ValueNotifier<int>(0);
-  final ValueNotifier<int> messagesVersion = ValueNotifier<int>(0);
   final ValueNotifier<bool> isOnline = ValueNotifier<bool>(true);
   final ValueNotifier<int> localDataResetVersion = ValueNotifier<int>(0);
 
@@ -46,13 +45,8 @@ class AppStateService {
     unreadMessages.value = 0;
   }
 
-  void bumpMessagesVersion() {
-    messagesVersion.value = messagesVersion.value + 1;
-  }
-
   void notifyLocalDataCleared() {
     resetUnreadMessages();
-    bumpMessagesVersion();
     localDataResetVersion.value = localDataResetVersion.value + 1;
   }
 }
