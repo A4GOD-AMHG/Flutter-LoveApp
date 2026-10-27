@@ -5,7 +5,7 @@
     android:initialLayout="@layout/days_widget"
     android:minWidth="110dp"
     android:minHeight="110dp"
-    android:previewImage="@drawable/dripping_heart"
+    android:previewImage="@drawable/heart_frame_00"
     android:previewLayout="@layout/days_widget"
     android:resizeMode="horizontal|vertical"
     android:targetCellWidth="2"

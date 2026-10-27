@@ -28,7 +28,9 @@ class _NoNetwork extends HttpOverrides {
       throw const SocketException('sin red (golden test)');
 }
 
-final _base = DateTime(2026, 10, 26, 9, 30);
+// Hoy a hora fija: el separador de fecha siempre dice "Hoy" y el golden no caduca.
+final _now = DateTime.now();
+final _base = DateTime(_now.year, _now.month, _now.day, 9, 30);
 User _user(int id, String username, String name) => User(
     id: id, username: username, name: name, createdAt: _base, updatedAt: _base);
 final _anyel = _user(1, 'anyel', 'Anyel');

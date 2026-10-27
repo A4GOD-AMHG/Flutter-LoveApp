@@ -89,7 +89,12 @@ class _LayoutWidgetState extends State<LayoutWidget> {
           SafeArea(
             child: IndexedStack(
               index: _index,
-              children: _pages,
+              // IndexedStack no pausa animaciones ocultas: sin esto la gota de
+              // Inicio y demás animaciones siguen a 60 fps en otras pestañas.
+              children: [
+                for (var i = 0; i < _pages.length; i++)
+                  TickerMode(enabled: i == _index, child: _pages[i]),
+              ],
             ),
           ),
         ],

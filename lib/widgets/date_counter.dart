@@ -95,11 +95,14 @@ class _DateCounterState extends State<DateCounter> {
                               maxWidth: 283, minWidth: 283),
                           width: double.infinity,
                           height: 300,
-                          child: LottieBuilder.asset(
-                            'assets/drop_purple_water.json',
-                            fit: BoxFit.cover,
-                            repeat: true,
-                            animate: true,
+                          // Aísla el repintado a 60 fps de la gota del resto del corazón.
+                          child: RepaintBoundary(
+                            child: LottieBuilder.asset(
+                              'assets/drop_purple_water.json',
+                              fit: BoxFit.cover,
+                              repeat: true,
+                              animate: true,
+                            ),
                           ),
                         ),
                       ),

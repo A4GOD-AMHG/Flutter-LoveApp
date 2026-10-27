@@ -1,23 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Generado por tool/widget_frames_test.dart: no editar a mano. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:contentDescription="@string/days_widget_description"
     android:padding="4dp">
 
-    <ImageView
+    <!-- Pasa los cuadros de la gota; Android lo detiene solo con la pantalla apagada. -->
+    <ViewFlipper
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:contentDescription="@string/days_widget_description"
-        android:scaleType="fitCenter"
-        android:src="@drawable/dripping_heart" />
+        android:autoStart="true"
+        android:flipInterval="83">
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_00" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_01" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_02" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_03" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_04" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_05" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_06" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_07" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_08" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_09" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_10" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_11" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_11" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_11" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_11" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_11" />
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/heart_frame_11" />
+    </ViewFlipper>
 
     <TextView
         android:id="@+id/days_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:layout_marginTop="14dp"
+        android:layout_marginTop="12dp"
         android:text="@string/days_widget_placeholder"
         android:textColor="#FFFFFF"
         android:textSize="16sp"
