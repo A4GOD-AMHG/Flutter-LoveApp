@@ -54,8 +54,10 @@ Widget heart(AnimationController controller) => SizedBox(
                 bottom: 0,
                 left: 0,
                 right: 0,
+                // 1 px de solape tapa la raya clara del borde suavizado entre
+                // el líquido del Lottie y esta franja al renderizar a escala 1,5.
                 child: Container(
-                  height: 110,
+                  height: 111,
                   decoration: const BoxDecoration(
                     color: outerColor,
                     borderRadius: BorderRadius.only(
