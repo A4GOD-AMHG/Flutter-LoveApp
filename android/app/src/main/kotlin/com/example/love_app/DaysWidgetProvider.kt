@@ -18,7 +18,7 @@ class DaysWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val views = RemoteViews(context.packageName, R.layout.days_widget).apply {
-            setTextViewText(R.id.days_text, if (days == 1L) "$days día" else "$days días")
+            setTextViewText(R.id.days_text, days.toString())
             setOnClickPendingIntent(R.id.widget_root, openApp)
         }
         ids.forEach { manager.updateAppWidget(it, views) }

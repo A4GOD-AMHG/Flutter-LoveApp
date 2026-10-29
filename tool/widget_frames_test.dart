@@ -135,7 +135,7 @@ ${sequence.map((n) => '        <ImageView android:layout_width="match_parent" an
         android:layout_marginTop="12dp"
         android:text="@string/days_widget_placeholder"
         android:textColor="#FFFFFF"
-        android:textSize="16sp"
+        android:textSize="32sp"
         android:textStyle="bold" />
 </FrameLayout>
 """;

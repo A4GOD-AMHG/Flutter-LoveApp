@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="days_widget_description">Días juntos</string>
-    <string name="days_widget_placeholder">♥ días</string>
+    <string name="days_widget_placeholder">♥</string>
 </resources>
